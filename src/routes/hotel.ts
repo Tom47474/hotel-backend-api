@@ -1,0 +1,1 @@
+// 用户端：/api/hotels, /api/hotel/:id

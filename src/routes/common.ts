@@ -1,0 +1,1 @@
+// 公共：/api/holiday_calendar, /api/hotel/:id/poi

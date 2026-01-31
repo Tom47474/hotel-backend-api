@@ -1,0 +1,1 @@
+// 校验 token，区分 merchant / admin
