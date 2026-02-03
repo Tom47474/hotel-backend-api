@@ -1,0 +1,193 @@
+# 工作流名称
+name: Build and Deploy
+
+# 触发条件配置
+on:
+  push:
+    branches: [ master ]
+  repository_dispatch:
+    types: [ deploy-update ]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Record start time
+      if: always()
+      run: echo "START_TIME=$(date +%s)" >> $GITHUB_ENV
+
+    - name: Set target ref
+      if: always()
+      run: |
+        if [[ "${{ github.event_name }}" == "repository_dispatch" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          echo "TARGET_REF=refs/heads/master" >> $GITHUB_ENV
+        else
+          echo "TARGET_REF=${{ github.ref }}" >> $GITHUB_ENV
+        fi
+
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ env.TARGET_REF }}
+
+    - name: Setup Node.js ${{ env.NODE_VERSION }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Set Environment Secrets
+      run: |
+        echo "DB_HOST=${{ secrets.DB_HOST }}" >> $GITHUB_ENV
+        echo "DB_USER=${{ secrets.DB_USER }}" >> $GITHUB_ENV
+        echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" >> $GITHUB_ENV
+        echo "DB_NAME=${{ secrets.DB_NAME }}" >> $GITHUB_ENV
+        echo "DB_PORT=${{ secrets.DB_PORT }}" >> $GITHUB_ENV
+        echo "PORT=${{ secrets.PORT }}" >> $GITHUB_ENV
+        echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" >> $GITHUB_ENV
+        echo "JWT_EXPIRES=${{ secrets.JWT_EXPIRES }}" >> $GITHUB_ENV
+        echo "AMAP_POI_KEY=${{ secrets.AMAP_POI_KEY }}" >> $GITHUB_ENV
+
+    - name: Package backend for deploy
+      run: |
+        if [ ! -f "package.json" ]; then
+          echo "Error: package.json not found"
+          exit 1
+        fi
+        tar -czf deploy.tar.gz \
+          --exclude='.git' \
+          --exclude='node_modules/.cache' \
+          --exclude='*.map' \
+          src \
+          package.json \
+          package-lock.json \
+          node_modules
+        ls -lh deploy.tar.gz
+
+    - name: Configure JD Cloud Server
+      run: |
+        echo "JD_CLOUD_HOST=${{ secrets.JD_CLOUD_HOST }}" >> $GITHUB_ENV
+        echo "JD_CLOUD_USER=${{ secrets.JD_CLOUD_USER }}" >> $GITHUB_ENV
+        echo "JD_CLOUD_PORT=${{ secrets.JD_CLOUD_PORT }}" >> $GITHUB_ENV
+        echo "JD_CLOUD_DEPLOY_PATH=${{ secrets.JD_CLOUD_DEPLOY_PATH }}" >> $GITHUB_ENV
+        echo "JD_CLOUD_APP_PORT=${{ secrets.JD_CLOUD_APP_PORT }}" >> $GITHUB_ENV
+
+    - name: Setup SSH
+      run: |
+        mkdir -p ~/.ssh
+        chmod 700 ~/.ssh
+        echo "${{ secrets.JD_CLOUD_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -p ${{ env.JD_CLOUD_PORT }} ${{ env.JD_CLOUD_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+
+    - name: Deploy to JD Cloud Server
+      run: bash deploy/jdcloud.sh
+      env:
+        JD_CLOUD_HOST: ${{ env.JD_CLOUD_HOST }}
+        JD_CLOUD_USER: ${{ env.JD_CLOUD_USER }}
+        JD_CLOUD_PORT: ${{ env.JD_CLOUD_PORT }}
+        JD_CLOUD_DEPLOY_PATH: ${{ env.JD_CLOUD_DEPLOY_PATH }}
+        JD_CLOUD_APP_PORT: ${{ env.JD_CLOUD_APP_PORT }}
+        DB_HOST: ${{ env.DB_HOST }}
+        DB_USER: ${{ env.DB_USER }}
+        DB_PASSWORD: ${{ env.DB_PASSWORD }}
+        DB_NAME: ${{ env.DB_NAME }}
+        DB_PORT: ${{ env.DB_PORT }}
+        PORT: ${{ env.PORT }}
+        JWT_SECRET: ${{ env.JWT_SECRET }}
+        JWT_EXPIRES: ${{ env.JWT_EXPIRES }}
+        AMAP_POI_KEY: ${{ env.AMAP_POI_KEY }}
+
+    - name: Set Notification Variables
+      if: always()
+      run: |
+        echo "TIME=$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')" >> $GITHUB_ENV
+        BRANCH_NAME="${GITHUB_REF##*/}"
+        echo "BRANCH=${BRANCH_NAME}" >> $GITHUB_ENV
+        if [ "${{ job.status }}" == "success" ]; then
+          echo "STATUS=Success" >> $GITHUB_ENV
+          echo "COLOR=green" >> $GITHUB_ENV
+          echo "EMOJI=✅" >> $GITHUB_ENV
+        elif [ "${{ job.status }}" == "cancelled" ]; then
+          echo "STATUS=Cancelled" >> $GITHUB_ENV
+          echo "COLOR=grey" >> $GITHUB_ENV
+          echo "EMOJI=⚪" >> $GITHUB_ENV
+        else
+          echo "STATUS=Failed" >> $GITHUB_ENV
+          echo "COLOR=red" >> $GITHUB_ENV
+          echo "EMOJI=❌" >> $GITHUB_ENV
+        fi
+        if [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
+          echo "TRIGGERED_BY=External trigger" >> $GITHUB_ENV
+        elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          echo "TRIGGERED_BY=Manual" >> $GITHUB_ENV
+        elif [[ "${{ github.event_name }}" == "push" ]]; then
+          echo "TRIGGERED_BY=Push to ${BRANCH_NAME}" >> $GITHUB_ENV
+        else
+          echo "TRIGGERED_BY=${{ github.event_name }}" >> $GITHUB_ENV
+        fi
+        if [[ "${{ github.event_name }}" == "push" ]]; then
+          AUTHOR=$(git log -1 --pretty=format:'%an')
+          MESSAGE=$(git log -1 --pretty=format:'%s')
+          echo "COMMIT_MSG=${MESSAGE}" >> $GITHUB_ENV
+          echo "COMMIT_AUTHOR=${AUTHOR}" >> $GITHUB_ENV
+        else
+          echo "COMMIT_AUTHOR=N/A" >> $GITHUB_ENV
+          echo "COMMIT_MSG=N/A" >> $GITHUB_ENV
+        fi
+        END_TIME=$(date +%s)
+        DURATION=$((END_TIME - START_TIME))
+        MINUTES=$((DURATION / 60))
+        SECONDS=$((DURATION % 60))
+        echo "DURATION=${MINUTES}m ${SECONDS}s" >> $GITHUB_ENV
+
+    - name: Send Lark Notification (Card)
+      if: always()
+      env:
+        LARK_WEBHOOK: ${{ secrets.LARK_WEBHOOK_URL }}
+      run: |
+        JSON_PAYLOAD=$(cat <<EOF
+        {
+          "msg_type": "interactive",
+          "card": {
+            "schema": "2.0",
+            "header": {
+              "title": {
+                "tag": "plain_text",
+                "content": "Hotel Backend Deploy Notification"
+              },
+              "template": "${COLOR}",
+              "padding": "12px 12px 12px 12px"
+            },
+            "body": {
+              "direction": "vertical",
+              "padding": "12px 12px 12px 12px",
+              "elements": [
+                { "tag": "markdown", "content": "**Status:** ${EMOJI} ${STATUS}" },
+                { "tag": "markdown", "content": "**Time:** ${TIME} (BeiJing)" },
+                { "tag": "markdown", "content": "**Duration:** ${DURATION}" },
+                { "tag": "markdown", "content": "**Branch:** ${BRANCH}" },
+                { "tag": "markdown", "content": "**Triggered by:** ${TRIGGERED_BY}" },
+                { "tag": "markdown", "content": "**Author:** ${COMMIT_AUTHOR}" },
+                { "tag": "markdown", "content": "**Message:** ${COMMIT_MSG}" },
+                { "tag": "markdown", "content": "[View Workflow →](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})" }
+              ]
+            }
+          }
+        }
+        EOF
+        )
+        curl -X POST "$LARK_WEBHOOK" \
+          -H "Content-Type: application/json" \
+          -d "$JSON_PAYLOAD"
