@@ -77,7 +77,7 @@ fi
 pm2 stop "hotel-backend" 2>/dev/null || true
 pm2 delete "hotel-backend" 2>/dev/null || true
 
-cat > ecosystem.config.js << PM2EOF
+cat > ecosystem.config.cjs << PM2EOF
 module.exports = {
   apps: [{
     name: "hotel-backend",
@@ -100,7 +100,7 @@ module.exports = {
 }
 PM2EOF
 
-pm2 start ecosystem.config.js
+pm2 start ecosystem.config.cjs
 pm2 save
 pm2 list
 
