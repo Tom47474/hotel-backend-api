@@ -9,6 +9,8 @@ const router = Router();
 router.use(requireMerchant);
 
 router.post('/hotel', merchantController.createHotel);
+router.get('/hotels', merchantController.getHotelsList);
+router.get('/hotel/:id/edit/latest', merchantController.getHotelEditLatest);
 router.get('/hotel/:id', merchantController.getHotelDetail);
 router.post('/hotel/:id/edit', merchantController.submitHotelEdit);
 router.post('/hotel/:id/room', merchantController.createRoom);

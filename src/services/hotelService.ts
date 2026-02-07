@@ -106,7 +106,143 @@ export interface MerchantHotelDetail {
     facilities: number[];
 }
 
+/** 商户酒店列表项（含最新修改状态，便于展示「修改已驳回」） */
+export interface MerchantHotelListItem {
+    hotel_id: number;
+    name: string;
+    status: string;
+    created_at: string;
+    latest_edit?: {
+        edit_status: string;
+        reject_reason: string | null;
+        reviewed_at: string | null;
+    };
+}
 
+/** 商户获取「该酒店最近一条修改记录」的返回结构（含驳回原因与提交内容） */
+export interface MerchantHotelEditLatest {
+    hotel_edit_id: number;
+    hotel_id: number;
+    edit_status: string;
+    reject_reason: string | null;
+    reviewed_at: string | null;
+    created_at: string;
+    name: string | null;
+    star: number | null;
+    city: string | null;
+    address: string | null;
+    latitude: number | string | null;
+    longitude: number | string | null;
+    description: string | null;
+    opening_date: string | null;
+    contacts_edit: unknown;
+    facilities_edit: unknown;
+    images_edit: unknown;
+}
+
+/**
+ * 商户：获取本商户的酒店列表（分页），含最新一条 hotel_edit 状态
+ */
+export async function getMerchantHotelsList(
+    merchantId: number,
+    page: number = 1,
+    size: number = 10
+): Promise<{ list: MerchantHotelListItem[]; total: number }> {
+    const pageNum = Math.max(1, page);
+    const sizeNum = Math.min(100, Math.max(1, size));
+    const offset = (pageNum - 1) * sizeNum;
+
+    const [countRows] = await pool.execute<RowDataPacket[]>(
+        'SELECT COUNT(*) AS total FROM hotel WHERE merchant_id = ?',
+        [merchantId]
+    );
+    const total = Number((countRows as any)?.[0]?.total ?? 0);
+
+    const [rows] = await pool.execute<RowDataPacket[]>(
+        `SELECT id AS hotel_id, name, status, created_at
+         FROM hotel WHERE merchant_id = ?
+         ORDER BY created_at DESC LIMIT ${sizeNum} OFFSET ${offset}`,
+        [merchantId]
+    );
+    const list: MerchantHotelListItem[] = (rows || []).map((r) => ({
+        hotel_id: r.hotel_id,
+        name: r.name || '',
+        status: r.status || '',
+        created_at: r.created_at ? String(r.created_at) : '',
+    }));
+
+    if (list.length === 0) return { list, total };
+
+    const hotelIds = list.map((h) => h.hotel_id);
+    const placeholders = hotelIds.map(() => '?').join(',');
+    const [editRows] = await pool.execute<RowDataPacket[]>(
+        `SELECT hotel_id, edit_status, reject_reason, reviewed_at
+         FROM hotel_edit
+         WHERE hotel_id IN (${placeholders})
+         ORDER BY id DESC`,
+        hotelIds
+    );
+    const latestByHotel: Record<number, { edit_status: string; reject_reason: string | null; reviewed_at: string | null }> = {};
+    for (const e of editRows || []) {
+        if (latestByHotel[e.hotel_id] == null) {
+            latestByHotel[e.hotel_id] = {
+                edit_status: e.edit_status || '',
+                reject_reason: e.reject_reason ?? null,
+                reviewed_at: e.reviewed_at ? String(e.reviewed_at) : null,
+            };
+        }
+    }
+    list.forEach((h) => {
+        const latest = latestByHotel[h.hotel_id];
+        if (latest) h.latest_edit = latest;
+    });
+
+    return { list, total };
+}
+
+/**
+ * 商户：获取本商户某酒店的最近一条 hotel_edit（用于详情页展示驳回原因与当时提交内容）
+ * 先校验酒店归属，再按 id 倒序取一条
+ */
+export async function getMerchantHotelEditLatest(
+    hotelId: number,
+    merchantId: number
+): Promise<MerchantHotelEditLatest | null> {
+    const [hRows] = await pool.execute<RowDataPacket[]>(
+        'SELECT id FROM hotel WHERE id = ? AND merchant_id = ? LIMIT 1',
+        [hotelId, merchantId]
+    );
+    if (!hRows?.length) return null;
+
+    const [rows] = await pool.execute<RowDataPacket[]>(
+        `SELECT id, hotel_id, name, star, city, address, latitude, longitude, description, opening_date,
+            edit_status, reject_reason, created_at, reviewed_at, contacts_edit, facilities_edit, images_edit
+         FROM hotel_edit WHERE hotel_id = ? ORDER BY id DESC LIMIT 1`,
+        [hotelId]
+    );
+    if (!rows?.length) return null;
+
+    const r = rows[0];
+    return {
+        hotel_edit_id: r.id,
+        hotel_id: r.hotel_id,
+        edit_status: r.edit_status || '',
+        reject_reason: r.reject_reason ?? null,
+        reviewed_at: r.reviewed_at ? String(r.reviewed_at) : null,
+        created_at: String(r.created_at),
+        name: r.name,
+        star: r.star,
+        city: r.city,
+        address: r.address,
+        latitude: r.latitude,
+        longitude: r.longitude,
+        description: r.description,
+        opening_date: r.opening_date ? String(r.opening_date) : null,
+        contacts_edit: r.contacts_edit != null ? (typeof r.contacts_edit === 'string' ? JSON.parse(r.contacts_edit) : r.contacts_edit) : null,
+        facilities_edit: r.facilities_edit != null ? (typeof r.facilities_edit === 'string' ? JSON.parse(r.facilities_edit) : r.facilities_edit) : null,
+        images_edit: r.images_edit != null ? (typeof r.images_edit === 'string' ? JSON.parse(r.images_edit) : r.images_edit) : null,
+    };
+}
 
 
 
@@ -336,3 +472,5 @@ export async function getHotelById(hotelId: number): Promise<MerchantHotelDetail
         facilities: (fRows || []).map((r) => r.facility_id),
     };
 }
+
+

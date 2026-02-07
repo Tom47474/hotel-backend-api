@@ -40,6 +40,44 @@ export async function createHotel(req: Request, res: Response) {
     }
 }
 
+/** GET /api/merchant/hotels — 商户获取自己的酒店列表（分页） */
+export async function getHotelsList(req: Request, res: Response) {
+    try {
+        const user = (req as any).user as AuthPayload;
+        const merchantId = user.id;
+        const page = Number(req.query.page) || 1;
+        const size = Number(req.query.size) || 10;
+
+        const { list, total } = await hotelService.getMerchantHotelsList(merchantId, page, size);
+        return res.status(200).json({
+            code: 200,
+            message: '成功',
+            data: { list, total, page, size },
+        });
+    } catch (e: any) {
+        return res.status(500).json({ code: 500, message: e.message || '查询失败', data: null });
+    }
+}
+
+/** GET /api/merchant/hotel/:id/edit/latest — 获取该酒店最近一条修改记录（含驳回原因与提交内容） */
+export async function getHotelEditLatest(req: Request, res: Response) {
+    try {
+        const user = (req as any).user as AuthPayload;
+        const merchantId = user.id;
+        const hotelId = Number(req.params.id);
+        if (!hotelId || Number.isNaN(hotelId)) {
+            return res.status(400).json({ code: 400, message: '酒店ID无效', data: null });
+        }
+        const data = await hotelService.getMerchantHotelEditLatest(hotelId, merchantId);
+        if (!data) {
+            return res.status(404).json({ code: 404, message: '无修改记录或无权查看', data: null });
+        }
+        return res.status(200).json({ code: 200, message: '成功', data });
+    } catch (e: any) {
+        return res.status(500).json({ code: 500, message: e.message || '查询失败', data: null });
+    }
+}
+
 /** GET /api/merchant/hotel/:id — 获取当前商户的酒店详情（用于编辑页回填） */
 export async function getHotelDetail(req: Request, res: Response) {
     try {
