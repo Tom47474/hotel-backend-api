@@ -1,0 +1,23 @@
+import { Request, Response } from 'express';
+import * as commonService from '../services/commonService.js';
+
+/** GET /api/holiday_calendar — 节假日列表（给前端用） */
+export async function getHolidayCalendar(_req: Request, res: Response) {
+  try {
+    const data = await commonService.getHolidayCalendar();
+    return res.status(200).json({ code: 200, message: '成功', data });
+  } catch (e: any) {
+    return res.status(500).json({ code: 500, message: e.message || '查询失败', data: null });
+  }
+}
+
+/** POST /api/admin/sync-holiday — 刷表：从公开 API 同步节假日 */
+export async function syncHoliday(req: Request, res: Response) {
+  try {
+    const year = req.body.year ? Number(req.body.year) : undefined;
+    const { count } = await commonService.syncHolidayFromPublicApi(year);
+    return res.status(200).json({ code: 200, message: '同步成功', data: { count } });
+  } catch (e: any) {
+    return res.status(500).json({ code: 500, message: e.message || '同步失败', data: null });
+  }
+}
