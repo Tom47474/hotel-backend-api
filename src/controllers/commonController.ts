@@ -21,3 +21,19 @@ export async function syncHoliday(req: Request, res: Response) {
     return res.status(500).json({ code: 500, message: e.message || '同步失败', data: null });
   }
 }
+
+
+
+/** GET /api/hotel/:id/poi — 酒店周边兴趣点（数据库 + 高德） */
+export async function getHotelPoi(req: Request, res: Response) {
+    try {
+      const hotelId = Number(req.params.id);
+      if (!hotelId || Number.isNaN(hotelId)) {
+        return res.status(400).json({ code: 400, message: '酒店ID无效', data: null });
+      }
+      const data = await commonService.getHotelPoi(hotelId);
+      return res.status(200).json({ code: 200, message: '成功', data });
+    } catch (e: any) {
+      return res.status(500).json({ code: 500, message: e.message || '查询失败', data: null });
+    }
+  }

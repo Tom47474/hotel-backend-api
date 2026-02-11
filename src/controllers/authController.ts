@@ -1,5 +1,7 @@
 import { Request, Response } from 'express';
 import * as authService from '../services/authService.js';
+import * as commonService from '../services/commonService.js';
+
 
 // controller做简单的校验，不操作数据库，调用service去处理业务逻辑，按统一格式返回 { code, message, data }
 
