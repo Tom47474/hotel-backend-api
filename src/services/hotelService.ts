@@ -244,7 +244,21 @@ export async function getMerchantHotelEditLatest(
     };
 }
 
-
+/** 用户端酒店列表项（酒店列表查询） */
+export interface UserHotelListItem {
+    hotel_id: number;
+    name: string;
+    star: number | null;
+    rating: number;
+    review_count: number;
+    address: string;
+    opening_date: string | null;
+    latitude: number | string | null;
+    longitude: number | string | null;
+    cover_image: string | null;
+    lowest_price: number | null;
+    facilities: string[];
+}
 
 /** 商户新增房型 */
 export interface CreateRoomParams {
@@ -474,3 +488,67 @@ export async function getHotelById(hotelId: number): Promise<MerchantHotelDetail
 }
 
 
+/**
+ * 用户端：获取已上线酒店列表（仅提供数据，筛选与排序由前端完成）
+ * lowest_price 取该酒店所有房型 base_price 的最小值
+ */
+export async function getUserHotelList(): Promise<UserHotelListItem[]> {
+    const [rows] = await pool.execute<RowDataPacket[]>(
+        `SELECT h.id AS hotel_id, h.name, h.star, h.rating, h.review_count, h.city, h.address,
+             h.latitude, h.longitude, h.opening_date,
+             (SELECT MIN(hr.base_price) FROM hotel_room hr WHERE hr.hotel_id = h.id) AS lowest_price
+     FROM hotel h
+     WHERE h.status = 'approved'
+     ORDER BY h.id ASC`
+    );
+
+    const list: (UserHotelListItem & { lowest_price: number | null })[] = (rows || []).map((r) => ({
+        hotel_id: r.hotel_id,
+        name: r.name || '',
+        star: r.star ?? null,
+        rating: Number(r.rating) || 0,
+        review_count: Number(r.review_count) || 0,
+        address: r.address || '',
+        opening_date: r.opening_date ? String(r.opening_date).slice(0, 10) : null,
+        latitude: r.latitude,
+        longitude: r.longitude,
+        cover_image: null as string | null,
+        lowest_price: r.lowest_price != null ? Number(r.lowest_price) : null,
+        facilities: [] as string[],
+    }));
+
+    if (list.length === 0) return list.map(({ lowest_price, ...rest }) => ({ ...rest, lowest_price }));
+
+    const hotelIds = list.map((h) => h.hotel_id);
+    const placeholders = hotelIds.map(() => '?').join(',');
+
+    const [coverRows] = await pool.execute<RowDataPacket[]>(
+        `SELECT hotel_id, image_url FROM hotel_image
+     WHERE hotel_id IN (${placeholders}) AND type = 'cover' ORDER BY sort ASC`,
+        hotelIds
+    );
+    const coverByHotel: Record<number, string> = {};
+    for (const r of coverRows || []) {
+        if (coverByHotel[r.hotel_id] == null) coverByHotel[r.hotel_id] = r.image_url || '';
+    }
+
+    const [facRows] = await pool.execute<RowDataPacket[]>(
+        `SELECT hf.hotel_id, f.name AS facility_name
+     FROM hotel_facility hf INNER JOIN facility f ON hf.facility_id = f.id
+     WHERE hf.hotel_id IN (${placeholders})
+     ORDER BY hf.hotel_id, f.name`,
+        hotelIds
+    );
+    const facilitiesByHotel: Record<number, string[]> = {};
+    for (const r of facRows || []) {
+        if (!facilitiesByHotel[r.hotel_id]) facilitiesByHotel[r.hotel_id] = [];
+        facilitiesByHotel[r.hotel_id].push(r.facility_name || '');
+    }
+
+    return list.map(({ lowest_price, ...rest }) => ({
+        ...rest,
+        cover_image: coverByHotel[rest.hotel_id] ?? null,
+        lowest_price,
+        facilities: facilitiesByHotel[rest.hotel_id] ?? [],
+    }));
+}

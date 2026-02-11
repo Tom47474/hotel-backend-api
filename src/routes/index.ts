@@ -5,11 +5,13 @@ import authRoutes from './auth.js';
 import merchantRoutes from './merchant.js'
 import adminRoutes from './admin.js';
 import commonRoutes from './common.js';
+import * as hotelController from '../controllers/hotelController.js';
 
 const router = Router();
 router.use('/auth', authRoutes);
 router.use('/merchant', merchantRoutes)
 router.use('/admin', adminRoutes);
+router.get('/hotels', hotelController.getHotelList);
 router.use('/', commonRoutes);
 
 
