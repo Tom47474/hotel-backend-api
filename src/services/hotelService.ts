@@ -19,6 +19,7 @@ export interface CreateHotelParams {
     }>;
     facilities?: number[];
     images?: Array<{ url: string; type: 'cover' | 'detail' }>;
+    hotel_type?: 'domestic' | 'overseas' | 'hourly' | 'guesthouse';
 }
 
 /** 商户创建酒店，创建后状态直接为 pending（待审核） */
@@ -30,11 +31,15 @@ export async function createHotel(
     try {
         await conn.beginTransaction();
 
+        const hotelType = params.hotel_type && ['domestic', 'overseas', 'hourly', 'guesthouse'].includes(params.hotel_type)
+            ? params.hotel_type
+            : 'domestic';
+
         const [hResult] = await conn.execute<ResultSetHeader>(
             `INSERT INTO hotel (
             name, star, city, address, latitude, longitude, description, opening_date,
-            merchant_id, status, rating, review_count
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, 0)`,
+            hotel_type, merchant_id, status, rating, review_count
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, 0)`,
             [
                 params.name,
                 params.star ?? null,
@@ -44,6 +49,7 @@ export async function createHotel(
                 params.longitude ?? null,
                 params.description ?? null,
                 params.opening_date ?? null,
+                hotelType,
                 merchantId,
             ]
         );
@@ -244,6 +250,18 @@ export async function getMerchantHotelEditLatest(
     };
 }
 
+export type HotelType = 'domestic' | 'overseas' | 'hourly' | 'guesthouse';
+export interface UserHotelListParams {
+    hotel_type?: HotelType;
+    city?: string;
+    keyword?: string;
+    star_min?: number;
+    star_max?: number;
+    price_min?: number;
+    price_max?: number;
+    facility_ids?: number[];
+    sort?: 'price_asc' | 'price_desc' | 'rating_desc';
+}
 /** 用户端酒店列表项（酒店列表查询） */
 export interface UserHotelListItem {
     hotel_id: number;
@@ -653,17 +671,64 @@ export async function getUserHotelDetail(
  * 用户端：获取已上线酒店列表（仅提供数据，筛选与排序由前端完成）
  * lowest_price 取该酒店所有房型 base_price 的最小值
  */
-export async function getUserHotelList(): Promise<UserHotelListItem[]> {
-    const [rows] = await pool.execute<RowDataPacket[]>(
-        `SELECT h.id AS hotel_id, h.name, h.star, h.rating, h.review_count, h.city, h.address,
+/**
+ * 用户端：获取酒店列表（仅已上线），按类型/城市/关键字/星级/价格/设施筛选，后端排序
+ * hotel_type 默认 domestic（国内）
+ */
+export async function getUserHotelList(params: UserHotelListParams = {}): Promise<UserHotelListItem[]> {
+    const {
+        hotel_type = 'domestic',
+        city,
+        keyword,
+        star_min,
+        star_max,
+        price_min,
+        price_max,
+        facility_ids,
+        sort = 'price_asc',
+    } = params;
+
+    const conditions: string[] = ["h.status = 'approved'", "h.hotel_type = ?"];
+    const values: any[] = [hotel_type];
+
+    if (city?.trim()) {
+        conditions.push('h.city LIKE ?');
+        values.push(`%${city.trim()}%`);
+    }
+    if (keyword?.trim()) {
+        conditions.push('(h.name LIKE ? OR h.address LIKE ?)');
+        const k = `%${keyword.trim()}%`;
+        values.push(k, k);
+    }
+    if (star_min != null && !Number.isNaN(star_min)) {
+        conditions.push('h.star >= ?');
+        values.push(star_min);
+    }
+    if (star_max != null && !Number.isNaN(star_max)) {
+        conditions.push('h.star <= ?');
+        values.push(star_max);
+    }
+
+    let facilitySubquery = '';
+    if (Array.isArray(facility_ids) && facility_ids.length > 0) {
+        const placeholders = facility_ids.map(() => '?').join(',');
+        facilitySubquery = ` AND h.id IN (
+        SELECT hotel_id FROM hotel_facility WHERE facility_id IN (${placeholders})
+        GROUP BY hotel_id HAVING COUNT(DISTINCT facility_id) = ?
+      )`;
+        values.push(...facility_ids, facility_ids.length);
+    }
+
+    const sql = `
+      SELECT h.id AS hotel_id, h.name, h.star, h.rating, h.review_count, h.city, h.address,
              h.latitude, h.longitude, h.opening_date,
              (SELECT MIN(hr.base_price) FROM hotel_room hr WHERE hr.hotel_id = h.id) AS lowest_price
-     FROM hotel h
-     WHERE h.status = 'approved'
-     ORDER BY h.id ASC`
-    );
+      FROM hotel h
+      WHERE ${conditions.join(' AND ')} ${facilitySubquery}
+    `;
+    const [rows] = await pool.execute<RowDataPacket[]>(sql, values);
 
-    const list: (UserHotelListItem & { lowest_price: number | null })[] = (rows || []).map((r) => ({
+    let list: (UserHotelListItem & { lowest_price: number | null })[] = (rows || []).map((r) => ({
         hotel_id: r.hotel_id,
         name: r.name || '',
         star: r.star ?? null,
@@ -678,6 +743,24 @@ export async function getUserHotelList(): Promise<UserHotelListItem[]> {
         facilities: [] as string[],
     }));
 
+    if (price_min != null && !Number.isNaN(price_min)) {
+        list = list.filter((h) => h.lowest_price != null && h.lowest_price >= price_min);
+    }
+    if (price_max != null && !Number.isNaN(price_max)) {
+        list = list.filter((h) => h.lowest_price != null && h.lowest_price <= price_max);
+    }
+
+    const sortKey = sort === 'rating_desc' ? 'rating' : 'lowest_price';
+    const desc = sort === 'price_desc' || sort === 'rating_desc';
+    list.sort((a, b) => {
+        const aVal = a[sortKey as keyof typeof a] ?? (desc ? -Infinity : Infinity);
+        const bVal = b[sortKey as keyof typeof b] ?? (desc ? -Infinity : Infinity);
+        if (typeof aVal === 'number' && typeof bVal === 'number') {
+            return desc ? bVal - aVal : aVal - bVal;
+        }
+        return 0;
+    });
+
     if (list.length === 0) return list.map(({ lowest_price, ...rest }) => ({ ...rest, lowest_price }));
 
     const hotelIds = list.map((h) => h.hotel_id);
@@ -685,7 +768,7 @@ export async function getUserHotelList(): Promise<UserHotelListItem[]> {
 
     const [coverRows] = await pool.execute<RowDataPacket[]>(
         `SELECT hotel_id, image_url FROM hotel_image
-     WHERE hotel_id IN (${placeholders}) AND type = 'cover' ORDER BY sort ASC`,
+       WHERE hotel_id IN (${placeholders}) AND type = 'cover' ORDER BY sort ASC`,
         hotelIds
     );
     const coverByHotel: Record<number, string> = {};
@@ -695,9 +778,9 @@ export async function getUserHotelList(): Promise<UserHotelListItem[]> {
 
     const [facRows] = await pool.execute<RowDataPacket[]>(
         `SELECT hf.hotel_id, f.name AS facility_name
-     FROM hotel_facility hf INNER JOIN facility f ON hf.facility_id = f.id
-     WHERE hf.hotel_id IN (${placeholders})
-     ORDER BY hf.hotel_id, f.name`,
+       FROM hotel_facility hf INNER JOIN facility f ON hf.facility_id = f.id
+       WHERE hf.hotel_id IN (${placeholders})
+       ORDER BY hf.hotel_id, f.name`,
         hotelIds
     );
     const facilitiesByHotel: Record<number, string[]> = {};

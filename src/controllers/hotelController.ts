@@ -1,10 +1,36 @@
 import { Request, Response } from 'express';
 import * as hotelService from '../services/hotelService.js';
 
-/** GET /api/hotels — 用户端酒店列表（仅数据，筛选与排序由前端完成） */
-export async function getHotelList(_req: Request, res: Response) {
+/** GET /api/hotels — 用户端酒店列表（后端筛选+排序，hotel_type 默认 domestic） */
+export async function getHotelList(req: Request, res: Response) {
   try {
-    const data = await hotelService.getUserHotelList();
+    const hotel_type = ((req.query.hotel_type as string) || 'domestic').toLowerCase();
+    const city = (req.query.city as string)?.trim();
+    const keyword = (req.query.keyword as string)?.trim();
+    const star_min = req.query.star_min != null ? Number(req.query.star_min) : undefined;
+    const star_max = req.query.star_max != null ? Number(req.query.star_max) : undefined;
+    const price_min = req.query.price_min != null ? Number(req.query.price_min) : undefined;
+    const price_max = req.query.price_max != null ? Number(req.query.price_max) : undefined;
+    let facility_ids: number[] | undefined;
+    if (req.query.facility_ids != null) {
+      const raw = req.query.facility_ids;
+      facility_ids = Array.isArray(raw)
+        ? raw.map((x) => Number(x)).filter((n) => !Number.isNaN(n))
+        : [Number(raw)].filter((n) => !Number.isNaN(n));
+    }
+    const sort = (req.query.sort as 'price_asc' | 'price_desc' | 'rating_desc') || 'price_asc';
+
+    const data = await hotelService.getUserHotelList({
+      hotel_type: hotel_type as 'domestic' | 'overseas' | 'hourly' | 'guesthouse',
+      city,
+      keyword,
+      star_min,
+      star_max,
+      price_min,
+      price_max,
+      facility_ids: facility_ids?.length ? facility_ids : undefined,
+      sort,
+    });
     return res.status(200).json({ code: 200, message: '成功', data });
   } catch (e: any) {
     return res.status(500).json({ code: 500, message: e.message || '查询失败', data: null });

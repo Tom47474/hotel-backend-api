@@ -9,7 +9,7 @@ export async function createHotel(req: Request, res: Response) {
         const user = (req as any).user as AuthPayload;
         const merchantId = user.id;
 
-        const { name, star, city, address, latitude, longitude, description, opening_date, contacts, facilities, images } =
+        const { name, star, city, address, latitude, longitude, description, opening_date, hotel_type, contacts, facilities, images } =
             req.body;
         if (!name?.trim()) {
             return res.status(400).json({ code: 400, message: '酒店名称不能为空', data: null });
@@ -30,6 +30,7 @@ export async function createHotel(req: Request, res: Response) {
             longitude,
             description,
             opening_date: opening_date ?? undefined,
+            hotel_type: hotel_type as hotelService.HotelType,
             contacts: Array.isArray(contacts) ? contacts : undefined,
             facilities: Array.isArray(facilities) ? facilities : undefined,
             images: Array.isArray(images) ? images : undefined,
