@@ -488,6 +488,167 @@ export async function getHotelById(hotelId: number): Promise<MerchantHotelDetail
 }
 
 
+/** 用户端酒店详情返回结构 */
+export interface UserHotelDetail {
+    hotel_id: number;
+    name: string;
+    star: number | null;
+    rating: number;
+    review_count: number;
+    address: string;
+    opening_date: string | null;
+    description: string | null;
+    contacts: Array<{ type: string; value: string; is_primary: number; remark: string | null }>;
+    images: Array<{ url: string; type: string }>;
+    facilities: string[];
+    rooms: Array<{
+        room_id: number;
+        name: string;
+        area: number | null;
+        bed_type: string | null;
+        max_guest: number | null;
+        price_detail: Array<{ date: string; price: number; stock: number }>;
+    }>;
+    promotions: Array<{ promotion_id: number; source: string; type: string; discount: number | null; minus: number | null; description: string | null }>;
+}
+
+/**
+ * 用户端：获取酒店详情（仅已上线），含房型价格日历、优惠
+ * check_in、check_out 用于生成 price_detail
+ */
+export async function getUserHotelDetail(
+    hotelId: number,
+    checkIn: string,
+    checkOut: string
+): Promise<UserHotelDetail | null> {
+    const [hRows] = await pool.execute<RowDataPacket[]>(
+        `SELECT id AS hotel_id, name, star, rating, review_count, city, address, latitude, longitude,
+                description, opening_date
+         FROM hotel WHERE id = ? AND status = 'approved' LIMIT 1`,
+        [hotelId]
+    );
+    if (!hRows?.length) return null;
+
+    const h = hRows[0];
+    const [cRows] = await pool.execute<RowDataPacket[]>(
+        'SELECT contact_type AS type, contact_value AS value, is_primary, remark FROM hotel_contact WHERE hotel_id = ? ORDER BY is_primary DESC',
+        [hotelId]
+    );
+    const [iRows] = await pool.execute<RowDataPacket[]>(
+        'SELECT image_url AS url, type FROM hotel_image WHERE hotel_id = ? ORDER BY sort ASC',
+        [hotelId]
+    );
+    const [fRows] = await pool.execute<RowDataPacket[]>(
+        `SELECT f.name FROM hotel_facility hf INNER JOIN facility f ON hf.facility_id = f.id WHERE hf.hotel_id = ? ORDER BY f.name`,
+        [hotelId]
+    );
+    const facilities = (fRows || []).map((r: any) => r.name || '');
+
+    const [roomRows] = await pool.execute<RowDataPacket[]>(
+        'SELECT id AS room_id, name, area, bed_type, max_guest, base_price, stock FROM hotel_room WHERE hotel_id = ? ORDER BY id',
+        [hotelId]
+    );
+    const rooms: UserHotelDetail['rooms'] = [];
+
+    const startDate = new Date(checkIn + 'T00:00:00');
+    const endDate = new Date(checkOut + 'T00:00:00');
+    const dates: string[] = [];
+    for (let d = new Date(startDate); d < endDate; d.setDate(d.getDate() + 1)) {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        dates.push(`${y}-${m}-${day}`);
+    }
+
+    if (roomRows?.length && dates.length > 0) {
+        const roomIds = (roomRows as any[]).map((r) => r.room_id);
+        const placeholders = roomIds.map(() => '?').join(',');
+        const datePlaceholders = dates.map(() => '?').join(',');
+        const [calRows] = await pool.execute<RowDataPacket[]>(
+            `SELECT room_id, date, price, stock FROM room_price_calendar
+             WHERE room_id IN (${placeholders}) AND date IN (${datePlaceholders})`,
+            [...roomIds, ...dates]
+        );
+        const calByRoomDate: Record<string, { price: number; stock: number }> = {};
+        for (const r of calRows || []) {
+            calByRoomDate[`${r.room_id}_${String(r.date).slice(0, 10)}`] = {
+                price: Number(r.price) || 0,
+                stock: Number(r.stock) || 0,
+            };
+        }
+
+        for (const r of roomRows as any[]) {
+            const priceDetail = dates.map((date) => {
+                const key = `${r.room_id}_${date}`;
+                const cal = calByRoomDate[key];
+                const price = cal ? cal.price : (r.base_price != null ? Number(r.base_price) : 0);
+                const stock = cal ? cal.stock : (r.stock != null ? Number(r.stock) : 0);
+                return { date, price, stock };
+            });
+            rooms.push({
+                room_id: r.room_id,
+                name: r.name || '',
+                area: r.area != null ? Number(r.area) : null,
+                bed_type: r.bed_type ?? null,
+                max_guest: r.max_guest != null ? Number(r.max_guest) : null,
+                price_detail: priceDetail,
+            });
+        }
+    } else {
+        for (const r of roomRows || []) {
+            const priceDetail = dates.map((date) => ({
+                date,
+                price: r.base_price != null ? Number(r.base_price) : 0,
+                stock: r.stock != null ? Number(r.stock) : 0,
+            }));
+            rooms.push({
+                room_id: r.room_id,
+                name: r.name || '',
+                area: r.area != null ? Number(r.area) : null,
+                bed_type: r.bed_type ?? null,
+                max_guest: r.max_guest != null ? Number(r.max_guest) : null,
+                price_detail: priceDetail,
+            });
+        }
+    }
+
+    const [promoRows] = await pool.execute<RowDataPacket[]>(
+        `SELECT id AS promotion_id, source, type, discount, minus, description
+         FROM promotion
+         WHERE hotel_id = ? AND start_time <= ? AND end_time >= ?`,
+        [hotelId, checkOut + ' 23:59:59', checkIn + ' 00:00:00']
+    );
+    const promotions = (promoRows || []).map((p: any) => ({
+        promotion_id: p.promotion_id,
+        source: p.source || '',
+        type: p.type || '',
+        discount: p.discount != null ? Number(p.discount) : null,
+        minus: p.minus != null ? Number(p.minus) : null,
+        description: p.description ?? null,
+    }));
+
+    return {
+        hotel_id: h.hotel_id,
+        name: h.name || '',
+        star: h.star ?? null,
+        rating: Number(h.rating) || 0,
+        review_count: Number(h.review_count) || 0,
+        address: h.address || '',
+        opening_date: h.opening_date ? String(h.opening_date).slice(0, 10) : null,
+        description: h.description ?? null,
+        contacts: (cRows || []).map((r: any) => ({
+            type: r.type,
+            value: r.value,
+            is_primary: r.is_primary,
+            remark: r.remark,
+        })),
+        images: (iRows || []).map((r: any) => ({ url: r.url, type: r.type })),
+        facilities,
+        rooms,
+        promotions,
+    };
+}
+
 /**
  * 用户端：获取已上线酒店列表（仅提供数据，筛选与排序由前端完成）
  * lowest_price 取该酒店所有房型 base_price 的最小值

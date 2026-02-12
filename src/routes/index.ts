@@ -12,6 +12,7 @@ router.use('/auth', authRoutes);
 router.use('/merchant', merchantRoutes)
 router.use('/admin', adminRoutes);
 router.get('/hotels', hotelController.getHotelList);
+router.get('/hotel/:id', hotelController.getHotelDetail);
 router.use('/', commonRoutes);
 
 
