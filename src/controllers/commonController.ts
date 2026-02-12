@@ -37,3 +37,14 @@ export async function getHotelPoi(req: Request, res: Response) {
       return res.status(500).json({ code: 500, message: e.message || '查询失败', data: null });
     }
   }
+
+
+/** GET /api/banners — 首页 Banner 列表（用户端） */
+export async function getBanners(_req: Request, res: Response) {
+  try {
+    const data = await commonService.getHomeBanners();
+    return res.status(200).json({ code: 200, message: '成功', data });
+  } catch (e: any) {
+    return res.status(500).json({ code: 500, message: e.message || '查询失败', data: null });
+  }
+}

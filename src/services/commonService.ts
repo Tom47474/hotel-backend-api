@@ -8,6 +8,13 @@ export interface HolidayItem {
     type: string;
 }
 
+export interface BannerItem {
+    id: number;
+    image_url: string;
+    hotel_id: number;
+    title: string | null;
+}
+
 /** 根据 API 返回的 name、date、holiday 推断 type */
 function inferHolidayType(dateStr: string, name: string, isHoliday: boolean): string {
     const n = (name || '').trim();
@@ -151,4 +158,20 @@ export async function getHotelPoi(hotelId: number): Promise<PoiItem[]> {
     const lat = Number(rows[0].latitude);
     const lng = Number(rows[0].longitude);
     return fetchAndSaveHotelPoiFromAmap(hotelId, lng, lat);
+}
+
+
+export async function getHomeBanners(): Promise<BannerItem[]> {
+    const [rows] = await pool.execute<any[]>(
+        `SELECT id, image_url, hotel_id, title
+       FROM banner
+       WHERE status = 'active'
+       ORDER BY sort_order ASC, id ASC`
+    );
+    return (rows || []).map((r) => ({
+        id: Number(r.id),
+        image_url: r.image_url || '',
+        hotel_id: Number(r.hotel_id),
+        title: r.title ?? null,
+    }));
 }
