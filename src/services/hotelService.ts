@@ -1,6 +1,17 @@
 import pool from '../config/db.js';
 import type { ResultSetHeader, RowDataPacket } from 'mysql2'
 
+/** 将日期值格式化为 YYYY-MM-DD，避免返回 "Tue Jun 01" 等短格式 */
+function toYYYYMMDD(val: any): string | null {
+    if (val == null || val === '') return null;
+    const d = new Date(val);
+    if (isNaN(d.getTime())) return null;
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+}
+
 // 创建酒店
 export interface CreateHotelParams {
     name: string;
@@ -243,7 +254,7 @@ export async function getMerchantHotelEditLatest(
         latitude: r.latitude,
         longitude: r.longitude,
         description: r.description,
-        opening_date: r.opening_date ? String(r.opening_date) : null,
+        opening_date: toYYYYMMDD(r.opening_date),
         contacts_edit: r.contacts_edit != null ? (typeof r.contacts_edit === 'string' ? JSON.parse(r.contacts_edit) : r.contacts_edit) : null,
         facilities_edit: r.facilities_edit != null ? (typeof r.facilities_edit === 'string' ? JSON.parse(r.facilities_edit) : r.facilities_edit) : null,
         images_edit: r.images_edit != null ? (typeof r.images_edit === 'string' ? JSON.parse(r.images_edit) : r.images_edit) : null,
@@ -358,7 +369,7 @@ export async function getHotelByMerchant(
         latitude: h.latitude,
         longitude: h.longitude,
         description: h.description,
-        opening_date: h.opening_date ? String(h.opening_date) : null,
+        opening_date: toYYYYMMDD(h.opening_date),
         status: h.status,
         contacts: (cRows || []).map((r) => ({
             type: r.type,
@@ -492,7 +503,7 @@ export async function getHotelById(hotelId: number): Promise<MerchantHotelDetail
         latitude: h.latitude,
         longitude: h.longitude,
         description: h.description,
-        opening_date: h.opening_date ? String(h.opening_date) : null,
+        opening_date: toYYYYMMDD(h.opening_date),
         status: h.status,
         contacts: (cRows || []).map((r) => ({
             type: r.type,
@@ -652,7 +663,7 @@ export async function getUserHotelDetail(
         rating: Number(h.rating) || 0,
         review_count: Number(h.review_count) || 0,
         address: h.address || '',
-        opening_date: h.opening_date ? String(h.opening_date).slice(0, 10) : null,
+        opening_date: toYYYYMMDD(h.opening_date),
         description: h.description ?? null,
         contacts: (cRows || []).map((r: any) => ({
             type: r.type,
@@ -735,7 +746,7 @@ export async function getUserHotelList(params: UserHotelListParams = {}): Promis
         rating: Number(r.rating) || 0,
         review_count: Number(r.review_count) || 0,
         address: r.address || '',
-        opening_date: r.opening_date ? String(r.opening_date).slice(0, 10) : null,
+        opening_date: toYYYYMMDD(r.opening_date),
         latitude: r.latitude,
         longitude: r.longitude,
         cover_image: null as string | null,
