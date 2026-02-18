@@ -223,6 +223,7 @@ export interface HotelEditDetail {
     contacts_edit: unknown;
     facilities_edit: unknown;
     images_edit: unknown;
+    facilities_edit_with_names ?: Array<{ id: number; name: string }>;
 }
 
 /**
@@ -238,6 +239,22 @@ export async function getHotelEditById(hotelEditId: number): Promise<HotelEditDe
     if (!rows?.length) return null;
 
     const r = rows[0];
+    const facilitiesEdit = r.facilities_edit !== null ? 
+             (typeof r.facilities_edit === 'string' ? JSON.parse(r.facilities_edit) 
+             : r.facilities_edit) : null;
+
+    let facilitiesEditWithNames: Array<{ id: number; name: string }> | undefined;
+    if (Array.isArray(facilitiesEdit) && facilitiesEdit.length > 0) {
+        const placeholders = facilitiesEdit.map(() => '?').join(',');
+        const [fRows] = await pool.execute<RowDataPacket[]>(
+            `SELECT id, name FROM facility WHERE id IN (${placeholders})`,
+            facilitiesEdit
+        );
+        facilitiesEditWithNames = (fRows || []).map((row: any) => ({ id: row.id, name: row.name || '' }));
+    }
+
+
+
     return {
         id: r.id,
         hotel_id: r.hotel_id,
@@ -254,7 +271,8 @@ export async function getHotelEditById(hotelEditId: number): Promise<HotelEditDe
         created_at: String(r.created_at),
         reviewed_at: r.reviewed_at ? String(r.reviewed_at) : null,
         contacts_edit: r.contacts_edit != null ? (typeof r.contacts_edit === 'string' ? JSON.parse(r.contacts_edit) : r.contacts_edit) : null,
-        facilities_edit: r.facilities_edit != null ? (typeof r.facilities_edit === 'string' ? JSON.parse(r.facilities_edit) : r.facilities_edit) : null,
+        facilities_edit: facilitiesEdit,
+        facilities_edit_with_names: facilitiesEditWithNames,
         images_edit: r.images_edit != null ? (typeof r.images_edit === 'string' ? JSON.parse(r.images_edit) : r.images_edit) : null,
     };
 }

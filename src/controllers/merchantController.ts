@@ -9,7 +9,7 @@ export async function createHotel(req: Request, res: Response) {
         const user = (req as any).user as AuthPayload;
         const merchantId = user.id;
 
-        const { name, star, city, address, latitude, longitude, description, opening_date, hotel_type, contacts, facilities, images } =
+        const { name, star, city, address, latitude, longitude, description, opening_date, hotel_type, contacts, facilities, images, rooms } =
             req.body;
         if (!name?.trim()) {
             return res.status(400).json({ code: 400, message: '酒店名称不能为空', data: null });
@@ -34,6 +34,7 @@ export async function createHotel(req: Request, res: Response) {
             contacts: Array.isArray(contacts) ? contacts : undefined,
             facilities: Array.isArray(facilities) ? facilities : undefined,
             images: Array.isArray(images) ? images : undefined,
+            rooms: Array.isArray(rooms) ? rooms : undefined,
         });
         return res.status(200).json({ code: 200, message: '酒店创建成功', data: result });
     } catch (e: any) {
@@ -154,7 +155,7 @@ export async function createRoom(req: Request, res: Response) {
             return res.status(400).json({ code: 400, message: '酒店ID无效', data: null });
         }
 
-        const { name, area, bed_type, max_guest, base_price, stock } = req.body;
+        const { name, area, bed_type, max_guest, base_price, stock, images, tag_ids } = req.body;
 
         const result = await hotelService.createRoom(hotelId, merchantId, {
             name: name?.trim(),
@@ -163,6 +164,8 @@ export async function createRoom(req: Request, res: Response) {
             max_guest,
             base_price,
             stock,
+            images: Array.isArray(images) ? images : undefined,
+            tag_ids: Array.isArray(tag_ids) ? tag_ids : undefined,
         });
         return res.status(200).json({ code: 200, message: '房型创建成功', data: result });
     } catch (e: any) {

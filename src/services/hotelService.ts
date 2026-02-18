@@ -30,6 +30,7 @@ export interface CreateHotelParams {
     }>;
     facilities?: number[];
     images?: Array<{ url: string; type: 'cover' | 'detail' }>;
+    rooms?: CreateHotelRoomItem[];
     hotel_type?: 'domestic' | 'overseas' | 'hourly' | 'guesthouse';
 }
 
@@ -96,6 +97,39 @@ export async function createHotel(
             }
         }
 
+        if (Array.isArray(params.rooms) && params.rooms.length > 0) {
+            for (const room of params.rooms) {
+                const [rResult] = await conn.execute<ResultSetHeader>(
+                    `INSERT INTO hotel_room (hotel_id, name, area, bed_type, max_guest, base_price, stock)
+                     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                    [
+                        hotelId,
+                        room.name ?? null,
+                        room.area ?? null,
+                        room.bed_type ?? null,
+                        room.max_guest ?? null,
+                        room.base_price ?? null,
+                        room.stock ?? null,
+                    ]
+                );
+                const roomId = Number(rResult.insertId);
+                if (Array.isArray(room.images) && room.images.length > 0) {
+                    for (let idx = 0; idx < room.images.length; idx++) {
+                        const img = room.images[idx];
+                        await conn.execute(
+                            `INSERT INTO room_image (room_id, image_url, type, sort) VALUES (?, ?, ?, ?)`,
+                            [roomId, img.url, img.type || 'detail', idx]
+                        );
+                    }
+                }
+                if (Array.isArray(room.tag_ids) && room.tag_ids.length > 0) {
+                    for (const tagId of room.tag_ids) {
+                        await conn.execute(`INSERT INTO hotel_room_tag (room_id, tag_id) VALUES (?, ?)`, [roomId, tagId]);
+                    }
+                }
+            }
+        }
+
         await conn.commit();
         return { hotel_id: hotelId };
     } catch (e) {
@@ -121,6 +155,47 @@ export interface MerchantHotelDetail {
     contacts: Array<{ type: string; value: string; is_primary: number; remark: string | null }>;
     images: Array<{ url: string; type: string; sort: number }>;
     facilities: number[];
+    rooms?: Array<{
+        room_id: number;
+        name: string | null;
+        area: number | null;
+        bed_type: string | null;
+        max_guest: number | null;
+        base_price: number | null;
+        stock: number | null;
+        images: Array<{ url: string; type: string; sort: number }>;
+        tag_ids: number[];
+    }>;
+}
+
+/** 房型详情项（含图片、标签名） */
+export interface RoomDetailItem {
+    room_id: number;
+    name: string | null;
+    area: number | null;
+    bed_type: string | null;
+    max_guest: number | null;
+    base_price: number | null;
+    stock: number | null;
+    images: Array<{ url: string; type: string; sort: number }>;
+    tags: Array<{ id: number; name: string }>;
+}
+/** 管理端酒店详情（含房型列表、设施带名称） */
+export interface AdminHotelDetail {
+    hotel_id: number;
+    name: string;
+    star: number | null;
+    city: string;
+    address: string;
+    latitude: number | string | null;
+    longitude: number | string | null;
+    description: string | null;
+    opening_date: string | null;
+    status: string;
+    contacts: Array<{ type: string; value: string; is_primary: number; remark: string | null }>;
+    images: Array<{ url: string; type: string; sort: number }>;
+    facilities: Array<{ id: number; name: string }>;
+    rooms: RoomDetailItem[];
 }
 
 /** 商户酒店列表项（含最新修改状态，便于展示「修改已驳回」） */
@@ -289,6 +364,18 @@ export interface UserHotelListItem {
     facilities: string[];
 }
 
+// 创建酒店时的每个房型项（图片、标签、id）
+export interface CreateHotelRoomItem {
+    name?: string;
+    area?: number;
+    bed_type?: string;
+    max_guest?: number;
+    base_price?: number;
+    stock?: number;
+    images?: Array<{ url: string; type: 'cover' | 'detail' }>;
+    tag_ids?: number[];
+}
+
 /** 商户新增房型 */
 export interface CreateRoomParams {
     name?: string;
@@ -297,6 +384,8 @@ export interface CreateRoomParams {
     max_guest?: number;
     base_price?: number;
     stock?: number;
+    images?: Array<{ url: string; type: 'cover' | 'detail' }>;
+    tag_ids?: number[];
 }
 
 /**
@@ -329,7 +418,22 @@ export async function createRoom(
             params.stock ?? null,
         ]
     );
-    return { room_id: Number(result.insertId) };
+    const roomId = Number(result.insertId);
+    if (Array.isArray(params.images) && params.images.length > 0) {
+        for (let idx = 0; idx < params.images.length; idx++) {
+            const img = params.images[idx];
+            await pool.execute(
+                `INSERT INTO room_image (room_id, image_url, type, sort) VALUES (?, ?, ?, ?)`,
+                [roomId, img.url, img.type || 'detail', idx]
+            );
+        }
+    }
+    if (Array.isArray(params.tag_ids) && params.tag_ids.length > 0) {
+        for (const tagId of params.tag_ids) {
+            await pool.execute(`INSERT INTO hotel_room_tag (room_id, tag_id) VALUES (?, ?)`, [roomId, tagId]);
+        }
+    }
+    return { room_id: roomId };
 }
 
 /**
@@ -360,6 +464,49 @@ export async function getHotelByMerchant(
         [hotelId]
     );
 
+    const [roomRows] = await pool.execute<RowDataPacket[]>(
+        'SELECT id AS room_id, name, area, bed_type, max_guest, base_price, stock FROM hotel_room WHERE hotel_id = ? ORDER BY id',
+        [hotelId]
+    );
+    const roomsForMerchant: NonNullable<MerchantHotelDetail['rooms']> = [];
+    if (roomRows?.length) {
+        const roomIds = (roomRows as any[]).map((r) => r.room_id);
+        const placeholders = roomIds.map(() => '?').join(',');
+        const [roomImgRows] = await pool.execute<RowDataPacket[]>(
+            `SELECT room_id, image_url AS url, type, sort FROM room_image WHERE room_id IN (${placeholders}) ORDER BY room_id, sort`,
+            roomIds
+        );
+        const [roomTagRows] = await pool.execute<RowDataPacket[]>(
+            `SELECT room_id, tag_id FROM hotel_room_tag WHERE room_id IN (${placeholders})`,
+            roomIds
+        );
+        const imagesByRoom: Record<number, Array<{ url: string; type: string; sort: number }>> = {};
+        const tagIdsByRoom: Record<number, number[]> = {};
+        for (const r of roomImgRows || []) {
+            const rid = r.room_id;
+            if (!imagesByRoom[rid]) imagesByRoom[rid] = [];
+            imagesByRoom[rid].push({ url: r.url, type: r.type || 'detail', sort: r.sort ?? 0 });
+        }
+        for (const r of roomTagRows || []) {
+            const rid = r.room_id;
+            if (!tagIdsByRoom[rid]) tagIdsByRoom[rid] = [];
+            tagIdsByRoom[rid].push(r.tag_id);
+        }
+        for (const r of roomRows as any[]) {
+            roomsForMerchant.push({
+                room_id: r.room_id,
+                name: r.name,
+                area: r.area != null ? Number(r.area) : null,
+                bed_type: r.bed_type,
+                max_guest: r.max_guest != null ? Number(r.max_guest) : null,
+                base_price: r.base_price != null ? Number(r.base_price) : null,
+                stock: r.stock != null ? Number(r.stock) : null,
+                images: imagesByRoom[r.room_id] || [],
+                tag_ids: tagIdsByRoom[r.room_id] || [],
+            });
+        }
+    }
+
     return {
         hotel_id: h.hotel_id,
         name: h.name,
@@ -379,6 +526,7 @@ export async function getHotelByMerchant(
         })),
         images: (iRows || []).map((r) => ({ url: r.url, type: r.type, sort: r.sort })),
         facilities: (fRows || []).map((r) => r.facility_id),
+        rooms: roomsForMerchant,
     };
 }
 
@@ -472,7 +620,7 @@ export async function submitHotelEdit(
 /**
  * 按酒店 ID 获取详情（不校验归属），供管理端使用
  */
-export async function getHotelById(hotelId: number): Promise<MerchantHotelDetail | null> {
+export async function getHotelById(hotelId: number): Promise<AdminHotelDetail | null> {
     const [hRows] = await pool.execute<RowDataPacket[]>(
         `SELECT id AS hotel_id, name, star, city, address, latitude, longitude, description, opening_date, status
          FROM hotel WHERE id = ? LIMIT 1`,
@@ -490,9 +638,53 @@ export async function getHotelById(hotelId: number): Promise<MerchantHotelDetail
         [hotelId]
     );
     const [fRows] = await pool.execute<RowDataPacket[]>(
-        'SELECT facility_id FROM hotel_facility WHERE hotel_id = ?',
+        `SELECT f.id, f.name FROM hotel_facility hf INNER JOIN facility f ON hf.facility_id = f.id WHERE hf.hotel_id = ? ORDER BY f.name`,
         [hotelId]
     );
+    const [roomRows] = await pool.execute<RowDataPacket[]>(
+        'SELECT id AS room_id, name, area, bed_type, max_guest, base_price, stock FROM hotel_room WHERE hotel_id = ? ORDER BY id',
+        [hotelId]
+    );
+
+    const rooms: RoomDetailItem[] = [];
+
+    if (roomRows?.length) {
+        const roomIds = (roomRows as any[]).map((r) => r.room_id);
+        const placeholders = roomIds.map(() => '?').join(',');
+        const [imgRows] = await pool.execute<RowDataPacket[]>(
+            `SELECT room_id, image_url AS url, type, sort FROM room_image WHERE room_id IN (${placeholders}) ORDER BY room_id, sort`,
+            roomIds
+        );
+        const [tagRows] = await pool.execute<RowDataPacket[]>(
+            `SELECT hrt.room_id, rt.id AS tag_id, rt.name AS tag_name FROM hotel_room_tag hrt INNER JOIN room_tag rt ON hrt.tag_id = rt.id WHERE hrt.room_id IN (${placeholders})`,
+            roomIds
+        );
+        const imagesByRoom: Record<number, Array<{ url: string; type: string; sort: number }>> = {};
+        const tagsByRoom: Record<number, Array<{ id: number; name: string }>> = {};
+        for (const r of imgRows || []) {
+            const rid = r.room_id;
+            if (!imagesByRoom[rid]) imagesByRoom[rid] = [];
+            imagesByRoom[rid].push({ url: r.url, type: r.type || 'detail', sort: r.sort ?? 0 });
+        }
+        for (const r of tagRows || []) {
+            const rid = r.room_id;
+            if (!tagsByRoom[rid]) tagsByRoom[rid] = [];
+            tagsByRoom[rid].push({ id: r.tag_id, name: r.tag_name || '' });
+        }
+        for (const r of roomRows as any[]) {
+            rooms.push({
+                room_id: r.room_id,
+                name: r.name,
+                area: r.area != null ? Number(r.area) : null,
+                bed_type: r.bed_type,
+                max_guest: r.max_guest != null ? Number(r.max_guest) : null,
+                base_price: r.base_price != null ? Number(r.base_price) : null,
+                stock: r.stock != null ? Number(r.stock) : null,
+                images: imagesByRoom[r.room_id] || [],
+                tags: tagsByRoom[r.room_id] || [],
+            });
+        }
+    }
 
     return {
         hotel_id: h.hotel_id,
@@ -512,7 +704,8 @@ export async function getHotelById(hotelId: number): Promise<MerchantHotelDetail
             remark: r.remark,
         })),
         images: (iRows || []).map((r) => ({ url: r.url, type: r.type, sort: r.sort })),
-        facilities: (fRows || []).map((r) => r.facility_id),
+        facilities: (fRows || []).map((r) => ({ id: r.id, name: r.name || '' })),
+        rooms,
     };
 }
 
