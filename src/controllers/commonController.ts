@@ -48,3 +48,13 @@ export async function getBanners(_req: Request, res: Response) {
     return res.status(500).json({ code: 500, message: e.message || '查询失败', data: null });
   }
 }
+
+/** GET /api/hotel_facilities — 酒店设施列表 */
+export async function getHotelFcilities(_req: Request, res: Response) {
+  try {
+    const data = await commonService.getHotelFcilities();
+    return res.status(200).json({ code: 200, message: "成功", data });
+  } catch (e: any) {
+    return res.status(500).json({ code: 500, message: e.message || '查询失败', data: null });
+  }
+}

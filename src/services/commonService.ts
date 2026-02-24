@@ -15,6 +15,11 @@ export interface BannerItem {
     title: string | null;
 }
 
+export interface FacilityItem {
+    id: number;
+    name: string;
+}
+
 /** 根据 API 返回的 name、date、holiday 推断 type */
 function inferHolidayType(dateStr: string, name: string, isHoliday: boolean): string {
     const n = (name || '').trim();
@@ -174,4 +179,14 @@ export async function getHomeBanners(): Promise<BannerItem[]> {
         hotel_id: Number(r.hotel_id),
         title: r.title ?? null,
     }));
+}
+
+export async function getHotelFcilities(): Promise<FacilityItem[]> {
+    const [rows] = await pool.execute<any[]>(
+        `SELECT id, name FROM facility`
+    );
+    return (rows || []).map((r) => ({
+        id: Number(r.id),
+        name: r.name || '',
+    }))
 }
