@@ -58,3 +58,13 @@ export async function getHotelFcilities(_req: Request, res: Response) {
     return res.status(500).json({ code: 500, message: e.message || '查询失败', data: null });
   }
 }
+
+/** POST /api/geoLocation 根据地址获取经纬度 */
+export async function getGeoLocation(req: Request, res: Response) {
+  try {
+    const data = await commonService.getGeoLocation(req.query.address, req.query.city);
+    return res.status(200).json({ code: 200, message: "成功", data });
+  } catch (err) {
+    return res.status(500).json({ code: 500, message: err.message || '查询失败', data: null });
+  }
+}

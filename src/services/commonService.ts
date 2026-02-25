@@ -20,6 +20,11 @@ export interface FacilityItem {
     name: string;
 }
 
+export interface GeolocationItem {
+    lng: number,
+    lat: number
+}
+
 /** 根据 API 返回的 name、date、holiday 推断 type */
 function inferHolidayType(dateStr: string, name: string, isHoliday: boolean): string {
     const n = (name || '').trim();
@@ -189,4 +194,16 @@ export async function getHotelFcilities(): Promise<FacilityItem[]> {
         id: Number(r.id),
         name: r.name || '',
     }))
+}
+
+/** 高德地图地理编码 */
+
+export async function getGeoLocation(city: string, address: string): Promise<GeolocationItem[]> {
+    const key = process.env.AMAP_POI_KEY;
+    if (!key) return [];
+    const url = `https://restapi.amap.com/v3/geocode/geo?address=${address}&city=${city}&count=1&output=JSON&key=${key}`
+    const res = await fetch(url);
+    const json = await res.json();
+    return json;
+    
 }
