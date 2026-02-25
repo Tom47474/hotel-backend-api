@@ -196,7 +196,7 @@ export async function getHotelFcilities(): Promise<FacilityItem[]> {
     }))
 }
 
-/** 高德地图地理编码 */
+/** 高德地图地理编码，需要传入地址信息，返回经纬度（用户商户上传酒店地址，获取经纬度保存到数据库） */
 
 export async function getGeoLocation(city: string, address: string): Promise<GeolocationItem[]> {
     const key = process.env.AMAP_POI_KEY;
@@ -206,4 +206,15 @@ export async function getGeoLocation(city: string, address: string): Promise<Geo
     const json = await res.json();
     return json;
     
+}
+
+/** 高德地图逆地理编码  需要传入经纬度，返回的是地址信息，用于用户的定位（显示用户的地址） */
+export async function getCurrentLocation(lng: string, lat: string): Promise<string> {
+    const key = process.env.AMAP_POI_KEY;
+    if (!key) return "";
+    const url = `https://restapi.amap.com/v3/geocode/regeo?output=JSON&location=${lng},${lat}&key=${key}&poitype=&radius=&extensions=all&roadlevel=0`;
+    const res = await fetch(url);
+    const json = await res.json();
+    return json;
+
 }

@@ -11,5 +11,6 @@ router.get('/hotel/:id/poi', commonController.getHotelPoi);
 router.get('/banners', commonController.getBanners);
 router.get('/facilities', commonController.getHotelFcilities);
 router.get('/getGeoLocation', commonController.getGeoLocation);
+router.get('/getCurrentLocation', commonController.getCurrentLocation);
 
 export default router;
