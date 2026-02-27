@@ -1,4 +1,8 @@
 import pool from '../config/db.js';
+import path from 'path';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const bucketSDK = require('../../lib/bucketSDK.js');
 
 const HOLIDAY_API = 'https://holiday.ailcc.com/api/holiday/year';
 
@@ -217,4 +221,58 @@ export async function getCurrentLocation(lng: string, lat: string): Promise<stri
     const json = await res.json();
     return json;
 
+}
+
+export async function uploadImages(files: Express.Multer.File[]): Promise<string[]> {
+    const SecretId = process.env.COS_SECRET_ID;
+    const SecretKey = process.env.COS_SECRET_KEY;
+    const Bucket = process.env.COS_BUCKET;
+    const Region = process.env.COS_REGION;
+
+    if (!SecretId || !SecretKey || !Bucket || !Region) {
+        throw new Error('COS 配置缺失，请检查环境变量');
+    }
+
+    const urls: string[] = [];
+
+    for (const file of files) {
+        const ext = path.extname(file.originalname) || '.jpg';
+        const objectKey = `uploads/hotels/${Date.now()}_${Math.random().toString(36).slice(2)}${ext}`;
+        const contentType = file.mimetype || 'image/jpeg';
+        const contentLength = file.buffer.length;
+
+        const authorization = bucketSDK.getAuth({
+            SecretId,
+            SecretKey,
+            Bucket,
+            Region,
+            Key: objectKey,
+            method: 'put',
+            Headers: {
+                'Content-Type': contentType,
+                'Content-Length': contentLength,
+            },
+        });
+
+        const cosPutUrl = `https://${Bucket}.cos.${Region}.myqcloud.com/${encodeURIComponent(objectKey).replace(/%2F/g, '/')}`;
+
+        const putRes = await fetch(cosPutUrl, {
+            method: 'PUT',
+            headers: {
+                Authorization: authorization,
+                'Content-Type': contentType,
+                'Content-Length': String(contentLength),
+            },
+            body: file.buffer,
+        });
+
+        if (!putRes.ok) {
+            const errText = await putRes.text();
+            throw new Error(`COS 上传失败: ${putRes.status} ${errText}`);
+        }
+
+        urls.push(`https://${Bucket}.cos.${Region}.myqcloud.com/${objectKey}`);
+    }
+
+    return urls;
 }
