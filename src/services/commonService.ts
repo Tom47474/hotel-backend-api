@@ -202,14 +202,16 @@ export async function getHotelFcilities(): Promise<FacilityItem[]> {
 
 /** 高德地图地理编码，需要传入地址信息，返回经纬度（用户商户上传酒店地址，获取经纬度保存到数据库） */
 
-export async function getGeoLocation(city: string, address: string): Promise<GeolocationItem[]> {
+export async function getGeoLocation(city: string, address: string): Promise<GeolocationItem> {
     const key = process.env.AMAP_POI_KEY;
-    if (!key) return [];
+    if (!key) return { lng: 0, lat: 0 };
     const url = `https://restapi.amap.com/v3/geocode/geo?address=${address}&city=${city}&count=1&output=JSON&key=${key}`
     const res = await fetch(url);
     const json = await res.json();
-    return json;
-    
+    // console.log("高德返回 --->", JSON.stringify(json));
+    const location = json.geocodes?.[0]?.location;
+    const [lng, lat] = location.split(",").map(Number);
+    return { lng, lat };
 }
 
 /** 高德地图逆地理编码  需要传入经纬度，返回的是地址信息，用于用户的定位（显示用户的地址） */

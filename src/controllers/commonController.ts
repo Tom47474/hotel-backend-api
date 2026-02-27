@@ -65,7 +65,7 @@ export async function getGeoLocation(req: Request, res: Response) {
   try {
     const address = String(req.query.address ?? '');
     const city = String(req.query.city ?? '');
-    const data = await commonService.getGeoLocation(address, city);
+    const data = await commonService.getGeoLocation(city, address);
     return res.status(200).json({ code: 200, message: "成功", data });
   } catch (err) {
     return res.status(500).json({ code: 500, message: err.message || '查询失败', data: null });
