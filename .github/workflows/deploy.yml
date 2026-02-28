@@ -58,6 +58,12 @@ jobs:
         echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" >> $GITHUB_ENV
         echo "JWT_EXPIRES=${{ secrets.JWT_EXPIRES }}" >> $GITHUB_ENV
         echo "AMAP_POI_KEY=${{ secrets.AMAP_POI_KEY }}" >> $GITHUB_ENV
+        echo "COS_BUCKET=${{ secrets.COS_BUCKET }}" >> $GITHUB_ENV
+        echo "COS_REGION=${{ secrets.COS_REGION }}" >> $GITHUB_ENV
+        echo "COS_SECRET_ID=${{ secrets.COS_SECRET_ID }}" >> $GITHUB_ENV
+        echo "COS_SECRET_KEY=${{ secrets.COS_SECRET_KEY }}" >> $GITHUB_ENV
+
+        
 
     - name: Package backend for deploy
       run: |
@@ -108,6 +114,10 @@ jobs:
         JWT_SECRET: ${{ env.JWT_SECRET }}
         JWT_EXPIRES: ${{ env.JWT_EXPIRES }}
         AMAP_POI_KEY: ${{ env.AMAP_POI_KEY }}
+        COS_BUCKET: ${{ env.COS_BUCKET }}
+        COS_REGION: ${{ env.COS_REGION }}
+        COS_SECRET_ID: ${{ env.COS_SECRET_ID }}
+        COS_SECRET_KEY: ${{ env.COS_SECRET_KEY }}
 
     - name: Set Notification Variables
       if: always()
