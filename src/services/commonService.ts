@@ -2,7 +2,7 @@ import pool from '../config/db.js';
 import path from 'path';
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
-const bucketSDK = require('../../lib/bucketSDK.js');
+const bucketSDK = require('../lib/bucketSDK.js');
 
 const HOLIDAY_API = 'https://holiday.ailcc.com/api/holiday/year';
 
@@ -27,6 +27,11 @@ export interface FacilityItem {
 export interface GeolocationItem {
     lng: number,
     lat: number
+}
+
+export interface RoomLabelItem {
+    id: number;
+    name: string;
 }
 
 /** 根据 API 返回的 name、date、holiday 推断 type */
@@ -277,4 +282,14 @@ export async function uploadImages(files: Express.Multer.File[]): Promise<string
     }
 
     return urls;
+}
+
+export async function getRoomLabels(): Promise<RoomLabelItem[]> {
+    const [rows] = await pool.execute<any[]>(
+        `SELECT id, name FROM room_tag`
+    );
+    return (rows || []).map((r) => ({
+        id: Number(r.id),
+        name: r.name || '',
+    }))
 }

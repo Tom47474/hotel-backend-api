@@ -22,5 +22,6 @@ router.get('/facilities', commonController.getHotelFcilities);
 router.get('/getGeoLocation', commonController.getGeoLocation);
 router.get('/getCurrentLocation', commonController.getCurrentLocation);
 router.post('/merchant/hotel/images/upload', upload.array('files', 20), commonController.uploadHotelImages);
+router.get('/roomLabels', commonController.getRoomLabels);
 
 export default router;

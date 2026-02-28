@@ -534,6 +534,7 @@ export async function getHotelByMerchant(
 export interface SubmitHotelEditParams {
     name?: string;
     star?: number;
+    hotel_type?: string;
     city?: string;
     address?: string;
     latitude?: number;
@@ -548,6 +549,17 @@ export interface SubmitHotelEditParams {
     }>;
     facilities?: number[];
     images?: Array<{ url: string; type: 'cover' | 'detail' }>;
+    rooms?: Array<{
+        room_id?: number;
+        name?: string;
+        area?: number;
+        bed_type?: string;
+        max_guest?: number;
+        base_price?: number;
+        stock?: number;
+        images?: Array<{ url: string; type: 'cover' | 'detail' }>;
+        tag_ids?: number[];
+    }>
 }
 
 /**
@@ -585,23 +597,22 @@ export async function submitHotelEdit(
         throw err;
     }
 
-    const contactsJson = Array.isArray(params.contacts) && params.contacts.length > 0
-        ? JSON.stringify(params.contacts)
-        : null;
-    const facilitiesJson = Array.isArray(params.facilities) && params.facilities.length > 0
-        ? JSON.stringify(params.facilities)
-        : null;
-    const imagesJson = Array.isArray(params.images) && params.images.length > 0
-        ? JSON.stringify(params.images)
-        : null;
+    const contactsJson = JSON.stringify(params.contacts ?? []);
+    const facilitiesJson = JSON.stringify(params.facilities ?? []);
+    const imagesJson = JSON.stringify(params.images ?? []);
+    const roomsJson = JSON.stringify(params.rooms ?? []);
 
     const [result] = await pool.execute<ResultSetHeader>(
-        `INSERT INTO hotel_edit (hotel_id, name, star, city, address, latitude, longitude, description, opening_date, edit_status, contacts_edit, facilities_edit, images_edit)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
+        `INSERT INTO hotel_edit (
+            hotel_id, name, star, hotel_type, city, address, latitude, longitude,
+            description, opening_date, edit_status,
+            contacts_edit, facilities_edit, images_edit, rooms_edit
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`,
         [
             hotelId,
             params.name ?? null,
             params.star ?? null,
+            params.hotel_type ?? null,
             params.city ?? null,
             params.address ?? null,
             params.latitude ?? null,
@@ -611,6 +622,7 @@ export async function submitHotelEdit(
             contactsJson,
             facilitiesJson,
             imagesJson,
+            roomsJson,
         ]
     );
     return { hotel_edit_id: Number(result.insertId) };

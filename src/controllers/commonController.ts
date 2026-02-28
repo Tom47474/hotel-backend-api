@@ -97,3 +97,13 @@ export async function uploadHotelImages(req: Request, res: Response) {
     return res.status(500).json({ code: 500, message: e.message || '上传失败', data: null });
   }
 }
+
+/** GET /api/roomLabels - 获取房型的标签列表 */
+export async function getRoomLabels(_req: Request, res: Response) {
+  try {
+    const data = await commonService.getRoomLabels();
+    return res.status(200).json({ code: 200, message: '成功', data: data });
+  } catch (err) {
+    return res.status(500).json({ code: 500, message: err.message || '获取房型标签列表失败', data: null });
+  }
+}
