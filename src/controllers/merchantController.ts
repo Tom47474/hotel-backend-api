@@ -102,47 +102,51 @@ export async function getHotelDetail(req: Request, res: Response) {
 
 /** POST /api/merchant/hotel/:id/edit — 提交酒店信息修改（待管理员审核） */
 export async function submitHotelEdit(req: Request, res: Response) {
-  try {
-    const user = (req as any).user as AuthPayload;
-    const merchantId = user.id;
-    const hotelId = Number(req.params.id);
-    if (!hotelId || Number.isNaN(hotelId)) {
-      return res.status(400).json({ code: 400, message: '酒店ID无效', data: null });
-    }
+    try {
+        const user = (req as any).user as AuthPayload;
+        const merchantId = user.id;
+        const hotelId = Number(req.params.id);
+        if (!hotelId || Number.isNaN(hotelId)) {
+            return res.status(400).json({ code: 400, message: '酒店ID无效', data: null });
+        }
 
-    const { name, star, city, address, latitude, longitude, description, opening_date, contacts, facilities, images } =
-      req.body;
+        const {
+            name, star, hotel_type, city, address, latitude, longitude,
+            description, opening_date, contacts, facilities, images, rooms 
+        } = req.body;
 
-    const result = await hotelService.submitHotelEdit(hotelId, merchantId, {
-      name: name?.trim(),
-      star,
-      city: city?.trim(),
-      address: address?.trim(),
-      latitude,
-      longitude,
-      description: description?.trim(),
-      opening_date: opening_date ?? undefined,
-      contacts: Array.isArray(contacts) ? contacts : undefined,
-      facilities: Array.isArray(facilities) ? facilities : undefined,
-      images: Array.isArray(images) ? images : undefined,
-    });
-    return res.status(200).json({
-      code: 200,
-      message: '修改已提交，等待管理员审核',
-      data: result,
-    });
-  } catch (e: any) {
-    if ((e as any).code === 'HOTEL_NOT_FOUND') {
-      return res.status(403).json({ code: 403, message: '酒店不存在或无权操作', data: null });
+        const result = await hotelService.submitHotelEdit(hotelId, merchantId, {
+            name: name?.trim(),
+            star,
+            hotel_type: hotel_type || undefined,                                                       
+            city: city?.trim(),
+            address: address?.trim(),
+            latitude,
+            longitude,
+            description: description?.trim(),
+            opening_date: opening_date ?? undefined,
+            contacts: Array.isArray(contacts) ? contacts : undefined,
+            facilities: Array.isArray(facilities) ? facilities : undefined,
+            images: Array.isArray(images) ? images : undefined,
+            rooms: Array.isArray(rooms) ? rooms : undefined,                  // ← 加
+        });
+        return res.status(200).json({
+            code: 200,
+            message: '修改已提交，等待管理员审核',
+            data: result,
+        });
+    } catch (e: any) {
+        if ((e as any).code === 'HOTEL_NOT_FOUND') {
+            return res.status(403).json({ code: 403, message: '酒店不存在或无权操作', data: null });
+        }
+        if ((e as any).code === 'HOTEL_NOT_APPROVED') {
+            return res.status(400).json({ code: 400, message: '仅已上线的酒店可提交修改', data: null });
+        }
+        if ((e as any).code === 'EDIT_PENDING_EXISTS') {
+            return res.status(400).json({ code: 400, message: '已有待审核修改，请等待审核结果', data: null });
+        }
+        return res.status(500).json({ code: 500, message: e.message || '提交失败', data: null });
     }
-    if ((e as any).code === 'HOTEL_NOT_APPROVED') {
-      return res.status(400).json({ code: 400, message: '仅已上线的酒店可提交修改', data: null });
-    }
-    if ((e as any).code === 'EDIT_PENDING_EXISTS') {
-      return res.status(400).json({ code: 400, message: '已有待审核修改，请等待审核结果', data: null });
-    }
-    return res.status(500).json({ code: 500, message: e.message || '提交失败', data: null });
-  }
 }
 
 /** POST /api/merchant/hotel/:id/room — 商户新增房型 */

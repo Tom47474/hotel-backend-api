@@ -220,6 +220,7 @@ export interface MerchantHotelEditLatest {
     reviewed_at: string | null;
     created_at: string;
     name: string | null;
+    hotel_type: string | null;
     star: number | null;
     city: string | null;
     address: string | null;
@@ -230,6 +231,7 @@ export interface MerchantHotelEditLatest {
     contacts_edit: unknown;
     facilities_edit: unknown;
     images_edit: unknown;
+    rooms_edit: unknown; 
 }
 
 /**
@@ -307,8 +309,9 @@ export async function getMerchantHotelEditLatest(
     if (!hRows?.length) return null;
 
     const [rows] = await pool.execute<RowDataPacket[]>(
-        `SELECT id, hotel_id, name, star, city, address, latitude, longitude, description, opening_date,
-            edit_status, reject_reason, created_at, reviewed_at, contacts_edit, facilities_edit, images_edit
+        `SELECT id, hotel_id, name, hotel_type, star, city, address, latitude, longitude, 
+                description, opening_date, edit_status, reject_reason, created_at, reviewed_at,
+                contacts_edit, facilities_edit, images_edit, rooms_edit
          FROM hotel_edit WHERE hotel_id = ? ORDER BY id DESC LIMIT 1`,
         [hotelId]
     );
@@ -323,6 +326,7 @@ export async function getMerchantHotelEditLatest(
         reviewed_at: r.reviewed_at ? String(r.reviewed_at) : null,
         created_at: String(r.created_at),
         name: r.name,
+        hotel_type: r.hotel_type ?? null,
         star: r.star,
         city: r.city,
         address: r.address,
@@ -333,6 +337,9 @@ export async function getMerchantHotelEditLatest(
         contacts_edit: r.contacts_edit != null ? (typeof r.contacts_edit === 'string' ? JSON.parse(r.contacts_edit) : r.contacts_edit) : null,
         facilities_edit: r.facilities_edit != null ? (typeof r.facilities_edit === 'string' ? JSON.parse(r.facilities_edit) : r.facilities_edit) : null,
         images_edit: r.images_edit != null ? (typeof r.images_edit === 'string' ? JSON.parse(r.images_edit) : r.images_edit) : null,
+        rooms_edit: r.rooms_edit != null
+        ? (typeof r.rooms_edit === 'string' ? JSON.parse(r.rooms_edit) : r.rooms_edit)
+        : null,
     };
 }
 
