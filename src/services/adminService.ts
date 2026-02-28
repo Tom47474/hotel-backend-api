@@ -102,6 +102,8 @@ export async function auditHotel(
  * 管理员：审核酒店信息修改（通过/驳回）
  * 通过：UPDATE hotel_edit，并把 hotel_edit 非空字段写回 hotel（及 contact/facility/image）
  * 驳回：UPDATE hotel_edit SET edit_status='rejected', reject_reason, reviewed_at
+ * 
+ * 这里需要改，将hotel_edit全量覆盖hotel，而不是只更新非空的字段，房型哪些信息也要上传到数据库
  */
 export async function auditHotelEdit(
     hotelEditId: number,
@@ -110,8 +112,8 @@ export async function auditHotelEdit(
     reason?: string
 ): Promise<void> {
     const [editRows] = await pool.execute<RowDataPacket[]>(
-        `SELECT id, hotel_id, name, star, city, address, latitude, longitude, description, opening_date,
-              contacts_edit, facilities_edit, images_edit
+        `SELECT id, hotel_id, name, hotel_type, star, city, address, latitude, longitude, description, opening_date,
+              contacts_edit, facilities_edit, images_edit, rooms_edit
        FROM hotel_edit WHERE id = ? AND edit_status = 'pending' LIMIT 1`,
         [hotelEditId]
     );
@@ -135,62 +137,114 @@ export async function auditHotelEdit(
     try {
         await conn.beginTransaction();
 
-        const updates: string[] = [];
-        const values: any[] = [];
-        const fields = ['name', 'star', 'city', 'address', 'latitude', 'longitude', 'description', 'opening_date'];
-        for (const f of fields) {
-            if (e[f] != null) {
-                updates.push(`${f} = ?`);
-                values.push(e[f]);
-            }
-        }
-        if (updates.length) {
-            values.push(hotelId);
+        // 1. 全量覆盖 hotel 基本字段（不判断 null，直接写）
+        await conn.execute(
+            `UPDATE hotel SET name = ?, hotel_type = ?, star = ?, city = ?, address = ?,
+                latitude = ?, longitude = ?, description = ?, opening_date = ?
+             WHERE id = ?`,
+            [
+                e.name,
+                e.hotel_type,
+                e.star,
+                e.city,
+                e.address,
+                e.latitude,
+                e.longitude,
+                e.description,
+                e.opening_date,
+                hotelId,
+            ]
+        );
+
+        // 2. 全量覆盖联系方式
+        const contacts = e.contacts_edit != null
+            ? (typeof e.contacts_edit === 'string' ? JSON.parse(e.contacts_edit) : e.contacts_edit)
+            : [];
+        await conn.execute('DELETE FROM hotel_contact WHERE hotel_id = ?', [hotelId]);
+        for (const c of contacts) {
             await conn.execute(
-                `UPDATE hotel SET ${updates.join(', ')} WHERE id = ?`,
-                values
+                'INSERT INTO hotel_contact (hotel_id, contact_type, contact_value, is_primary, remark) VALUES (?, ?, ?, ?, ?)',
+                [hotelId, c.type, c.value, c.is_primary ? 1 : 0, c.remark ?? null]
             );
         }
 
-        if (e.contacts_edit != null) {
-            const contacts = typeof e.contacts_edit === 'string' ? JSON.parse(e.contacts_edit) : e.contacts_edit;
-            if (Array.isArray(contacts) && contacts.length > 0) {
-                await conn.execute('DELETE FROM hotel_contact WHERE hotel_id = ?', [hotelId]);
-                for (const c of contacts) {
-                    await conn.execute(
-                        'INSERT INTO hotel_contact (hotel_id, contact_type, contact_value, is_primary, remark) VALUES (?, ?, ?, ?, ?)',
-                        [hotelId, c.type, c.value, c.is_primary ? 1 : 0, c.remark ?? null]
-                    );
-                }
-            }
+        // 3. 全量覆盖设施
+        const facilities = e.facilities_edit != null
+            ? (typeof e.facilities_edit === 'string' ? JSON.parse(e.facilities_edit) : e.facilities_edit)
+            : [];
+        await conn.execute('DELETE FROM hotel_facility WHERE hotel_id = ?', [hotelId]);
+        for (const fid of facilities) {
+            await conn.execute('INSERT INTO hotel_facility (hotel_id, facility_id) VALUES (?, ?)', [hotelId, fid]);
         }
-        if (e.facilities_edit != null) {
-            const facilities = typeof e.facilities_edit === 'string' ? JSON.parse(e.facilities_edit) : e.facilities_edit;
-            if (Array.isArray(facilities) && facilities.length > 0) {
-                await conn.execute('DELETE FROM hotel_facility WHERE hotel_id = ?', [hotelId]);
-                for (const fid of facilities) {
-                    await conn.execute('INSERT INTO hotel_facility (hotel_id, facility_id) VALUES (?, ?)', [hotelId, fid]);
-                }
-            }
+
+        // 4. 全量覆盖酒店图片
+        const images = e.images_edit != null
+            ? (typeof e.images_edit === 'string' ? JSON.parse(e.images_edit) : e.images_edit)
+            : [];
+        await conn.execute('DELETE FROM hotel_image WHERE hotel_id = ?', [hotelId]);
+        for (let i = 0; i < images.length; i++) {
+            const img = images[i];
+            await conn.execute(
+                'INSERT INTO hotel_image (hotel_id, image_url, type, sort) VALUES (?, ?, ?, ?)',
+                [hotelId, img.url, img.type || 'detail', i]
+            );
         }
-        if (e.images_edit != null) {
-            const images = typeof e.images_edit === 'string' ? JSON.parse(e.images_edit) : e.images_edit;
-            if (Array.isArray(images) && images.length > 0) {
-                await conn.execute('DELETE FROM hotel_image WHERE hotel_id = ?', [hotelId]);
-                images.forEach((img: any, index: number) => {
-                    conn.execute(
-                        'INSERT INTO hotel_image (hotel_id, image_url, type, sort) VALUES (?, ?, ?, ?)',
-                        [hotelId, img.url, img.type || 'detail', index]
-                    );
-                });
-                await Promise.all(
-                    images.map((img: any, index: number) =>
-                        conn.execute(
-                            'INSERT INTO hotel_image (hotel_id, image_url, type, sort) VALUES (?, ?, ?, ?)',
-                            [hotelId, img.url, img.type || 'detail', index]
-                        )
-                    )
+
+        // 5. 全量覆盖房型
+        const rooms = e.rooms_edit != null
+            ? (typeof e.rooms_edit === 'string' ? JSON.parse(e.rooms_edit) : e.rooms_edit)
+            : [];
+
+        if (rooms.length > 0) {
+            // 获取现有房型 id，用于删除图片和标签
+            const [existingRooms] = await conn.execute<RowDataPacket[]>(
+                'SELECT id FROM hotel_room WHERE hotel_id = ?',
+                [hotelId]
+            );
+            const existingRoomIds = (existingRooms as any[]).map((r) => r.id);
+
+            if (existingRoomIds.length > 0) {
+                const ph = existingRoomIds.map(() => '?').join(',');
+                await conn.execute(`DELETE FROM room_image WHERE room_id IN (${ph})`, existingRoomIds);
+                await conn.execute(`DELETE FROM hotel_room_tag WHERE room_id IN (${ph})`, existingRoomIds);
+            }
+            await conn.execute('DELETE FROM hotel_room WHERE hotel_id = ?', [hotelId]);
+
+            // 插入新房型
+            for (const room of rooms) {
+                const [rResult] = await conn.execute<ResultSetHeader>(
+                    `INSERT INTO hotel_room (hotel_id, name, area, bed_type, max_guest, base_price, stock)
+                     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                    [
+                        hotelId,
+                        room.name ?? null,
+                        room.area ?? null,
+                        room.bed_type ?? null,
+                        room.max_guest ?? null,
+                        room.base_price ?? null,
+                        room.stock ?? null,
+                    ]
                 );
+                const roomId = Number(rResult.insertId);
+
+                if (Array.isArray(room.images)) {
+                    for (let i = 0; i < room.images.length; i++) {
+                        const img = room.images[i];
+                        await conn.execute(
+                            'INSERT INTO room_image (room_id, image_url, type, sort) VALUES (?, ?, ?, ?)',
+                            [roomId, img.url, img.type || 'detail', i]
+                        );
+                    }
+                }
+
+                if (Array.isArray(room.tag_ids)) {
+                    for (const tagId of room.tag_ids) {
+                        await conn.execute(
+                            'INSERT INTO hotel_room_tag (room_id, tag_id) VALUES (?, ?)',
+                            [roomId, tagId]
+                        );
+                    }
+                }
             }
         }
 
