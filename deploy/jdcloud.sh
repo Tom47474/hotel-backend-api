@@ -98,7 +98,7 @@ module.exports = {
       DB_PORT: "${DB_PORT}",
       JWT_SECRET: "${JWT_SECRET}",
       JWT_EXPIRES: "${JWT_EXPIRES}",
-      AMAP_POI_KEY: "${AMAP_POI_KEY}"
+      AMAP_POI_KEY: "${AMAP_POI_KEY}",
       COS_BUCKET: "${COS_BUCKET}",
       COS_REGION: "${COS_REGION}",
       COS_SECRET_ID: "${COS_SECRET_ID}",
