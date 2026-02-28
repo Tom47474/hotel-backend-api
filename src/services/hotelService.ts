@@ -749,6 +749,8 @@ export interface UserHotelDetail {
         bed_type: string | null;
         max_guest: number | null;
         price_detail: Array<{ date: string; price: number; stock: number }>;
+        images: Array<{ url: string; type: string }>;
+        tags: Array<{ id: number; name: string }>;
     }>;
     promotions: Array<{ promotion_id: number; source: string; type: string; discount: number | null; minus: number | null; description: string | null }>;
 }
@@ -789,6 +791,35 @@ export async function getUserHotelDetail(
         'SELECT id AS room_id, name, area, bed_type, max_guest, base_price, stock FROM hotel_room WHERE hotel_id = ? ORDER BY id',
         [hotelId]
     );
+
+    // 查询房型图片和标签
+    let imagesByRoom: Record<number, Array<{ url: string; type: string }>> = {};
+    let tagsByRoom: Record<number, Array<{ id: number; name: string }>> = {};
+    if (roomRows?.length) {
+        const roomIds = (roomRows as any[]).map((r) => r.room_id);
+        const ph = roomIds.map(() => '?').join(',');
+    
+        const [roomImgRows] = await pool.execute<RowDataPacket[]>(
+            `SELECT room_id, image_url AS url, type FROM room_image WHERE room_id IN (${ph}) ORDER BY room_id, sort`,
+            roomIds
+        );
+        const [roomTagRows] = await pool.execute<RowDataPacket[]>(
+            `SELECT hrt.room_id, rt.id, rt.name FROM hotel_room_tag hrt 
+             INNER JOIN room_tag rt ON hrt.tag_id = rt.id WHERE hrt.room_id IN (${ph})`,
+            roomIds
+        );
+    
+        for (const r of roomImgRows || []) {
+            if (!imagesByRoom[r.room_id]) imagesByRoom[r.room_id] = [];
+            imagesByRoom[r.room_id].push({ url: r.url, type: r.type || 'detail' });
+        }
+        for (const r of roomTagRows || []) {
+            if (!tagsByRoom[r.room_id]) tagsByRoom[r.room_id] = [];
+            tagsByRoom[r.room_id].push({ id: r.id, name: r.name || '' });
+        }
+    }
+
+
     const rooms: UserHotelDetail['rooms'] = [];
 
     const startDate = new Date(checkIn + 'T00:00:00');
@@ -833,6 +864,8 @@ export async function getUserHotelDetail(
                 bed_type: r.bed_type ?? null,
                 max_guest: r.max_guest != null ? Number(r.max_guest) : null,
                 price_detail: priceDetail,
+                images: imagesByRoom[r.room_id] ?? [],
+                tags: tagsByRoom[r.room_id] ?? [],
             });
         }
     } else {
@@ -849,6 +882,8 @@ export async function getUserHotelDetail(
                 bed_type: r.bed_type ?? null,
                 max_guest: r.max_guest != null ? Number(r.max_guest) : null,
                 price_detail: priceDetail,
+                images: imagesByRoom[r.room_id] ?? [],
+                tags: tagsByRoom[r.room_id] ?? [],
             });
         }
     }
