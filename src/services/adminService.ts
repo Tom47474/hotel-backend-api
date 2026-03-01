@@ -330,3 +330,41 @@ export async function getHotelEditById(hotelEditId: number): Promise<HotelEditDe
         images_edit: r.images_edit != null ? (typeof r.images_edit === 'string' ? JSON.parse(r.images_edit) : r.images_edit) : null,
     };
 }
+
+/** 管理员：下线酒店 */
+export async function offlineHotel(hotelId: number): Promise<void> {
+    const [rows] = await pool.execute<RowDataPacket[]>(
+        'SELECT id, status FROM hotel WHERE id = ? LIMIT 1',
+        [hotelId]
+    );
+    if (!rows?.length) {
+        const err = new Error('酒店不存在');
+        (err as any).code = 'HOTEL_NOT_FOUND';
+        throw err;
+    }
+    if (rows[0].status !== 'approved') {
+        const err = new Error('仅已上线的酒店可下线');
+        (err as any).code = 'HOTEL_NOT_APPROVED';
+        throw err;
+    }
+    await pool.execute('UPDATE hotel SET status = ? WHERE id = ?', ['offline', hotelId]);
+}
+
+/** 管理员：重新上线酒店 */
+export async function onlineHotel(hotelId: number): Promise<void> {
+    const [rows] = await pool.execute<RowDataPacket[]>(
+        'SELECT id, status FROM hotel WHERE id = ? LIMIT 1',
+        [hotelId]
+    );
+    if (!rows?.length) {
+        const err = new Error('酒店不存在');
+        (err as any).code = 'HOTEL_NOT_FOUND';
+        throw err;
+    }
+    if (rows[0].status !== 'offline') {
+        const err = new Error('仅已下线的酒店可重新上线');
+        (err as any).code = 'HOTEL_NOT_OFFLINE';
+        throw err;
+    }
+    await pool.execute('UPDATE hotel SET status = ? WHERE id = ?', ['approved', hotelId]);
+}

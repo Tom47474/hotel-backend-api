@@ -13,9 +13,12 @@ router.get('/hotel/edit/:id', adminController.getHotelEdit);
 router.get('/hotel/:id', adminController.getHotelDetail);
 router.post('/hotel/:id/audit', adminController.auditHotel);
 router.post('/hotel/edit/:id/audit', adminController.auditHotelEdit);
+router.post('/hotel/:id/offline', adminController.offlineHotel);
+router.post('/hotel/:id/online', adminController.onlineHotel);
 
 // 公共：/api/admin/sync-holiday 管理员刷表：从公开 API 同步节假日
 router.post('/sync-holiday', commonController.syncHoliday);
+
 
 /**
  * GET /api/holiday_calendar：读表返回节假日列表，给前端用。

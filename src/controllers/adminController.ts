@@ -106,3 +106,34 @@ export async function getHotelDetail(req: Request, res: Response) {
         return res.status(500).json({ code: 500, message: e.message || '查询失败', data: null });
     }
 }
+
+
+/** POST /api/admin/hotel/:id/offline  下线酒店*/
+export async function offlineHotel(req: Request, res: Response) {
+    try {
+        const hotelId = Number(req.params.id);
+        if (!hotelId) return res.status(400).json({ code: 400, message: '酒店ID无效', data: null });
+
+        await adminService.offlineHotel(hotelId);
+        return res.json({ code: 200, message: '已下线', data: null });
+    } catch (e: any) {
+        if (e.code === 'HOTEL_NOT_FOUND') return res.status(404).json({ code: 404, message: '酒店不存在', data: null });
+        if (e.code === 'HOTEL_NOT_APPROVED') return res.status(400).json({ code: 400, message: '仅已上线的酒店可下线', data: null });
+        return res.status(500).json({ code: 500, message: e.message || '操作失败', data: null });
+    }
+}
+
+/** POST /api/admin/hotel/:id/online  上线酒店 */
+export async function onlineHotel(req: Request, res: Response) {
+    try {
+        const hotelId = Number(req.params.id);
+        if (!hotelId) return res.status(400).json({ code: 400, message: '酒店ID无效', data: null });
+
+        await adminService.onlineHotel(hotelId);
+        return res.json({ code: 200, message: '已重新上线', data: null });
+    } catch (e: any) {
+        if (e.code === 'HOTEL_NOT_FOUND') return res.status(404).json({ code: 404, message: '酒店不存在', data: null });
+        if (e.code === 'HOTEL_NOT_OFFLINE') return res.status(400).json({ code: 400, message: '仅已下线的酒店可上线', data: null });
+        return res.status(500).json({ code: 500, message: e.message || '操作失败', data: null });
+    }
+}
