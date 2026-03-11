@@ -737,6 +737,8 @@ export interface UserHotelDetail {
     rating: number;
     review_count: number;
     address: string;
+    longitude: number;
+    latitude: number;
     opening_date: string | null;
     description: string | null;
     contacts: Array<{ type: string; value: string; is_primary: number; remark: string | null }>;
@@ -910,6 +912,8 @@ export async function getUserHotelDetail(
         rating: Number(h.rating) || 0,
         review_count: Number(h.review_count) || 0,
         address: h.address || '',
+        longitude: Number(h.longitude) || 0,
+        latitude: Number(h.latitude) || 0,
         opening_date: toYYYYMMDD(h.opening_date),
         description: h.description ?? null,
         contacts: (cRows || []).map((r: any) => ({

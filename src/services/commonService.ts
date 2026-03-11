@@ -96,6 +96,8 @@ export interface PoiItem {
     name: string | null;
     type: string;
     distance: number;
+    longitude: number;
+    latitude: number;
 }
 
 /** 高德 type 字符串映射为 scenic | traffic | mall */
@@ -109,7 +111,7 @@ function mapAmapType(amapType: string): string {
 /** 从数据库读取该酒店已关联的 POI */
 async function getHotelPoiFromDb(hotelId: number): Promise<PoiItem[]> {
     const [rows] = await pool.execute<any[]>(
-        `SELECT p.id AS poi_id, p.name, p.type, hp.distance
+        `SELECT p.id AS poi_id, p.name, p.type, hp.distance, p.longitude, p.latitude
        FROM hotel_poi hp
        INNER JOIN poi p ON hp.poi_id = p.id
        WHERE hp.hotel_id = ?
@@ -121,6 +123,8 @@ async function getHotelPoiFromDb(hotelId: number): Promise<PoiItem[]> {
         name: r.name ?? '',
         type: r.type ?? 'scenic',
         distance: Number(r.distance) || 0,
+        longitude: Number(r.longitude) || 0,
+        latitude: Number(r.latitude) || 0,
     }));
 }
 
@@ -155,7 +159,7 @@ async function fetchAndSaveHotelPoiFromAmap(hotelId: number, lng: number, lat: n
             `INSERT INTO hotel_poi (hotel_id, poi_id, distance) VALUES (?, ?, ?)`,
             [hotelId, poiId, distance]
         );
-        results.push({ poi_id: poiId, name, type, distance });
+        results.push({ poi_id: poiId, name, type, distance, longitude: longitude || 0, latitude: latitude || 0 });
     }
     return results;
 }
