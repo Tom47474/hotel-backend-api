@@ -241,15 +241,22 @@ export async function uploadImages(files: Express.Multer.File[]): Promise<string
     const Region = process.env.COS_REGION;
 
     if (!SecretId || !SecretKey || !Bucket || !Region) {
-        throw new Error('COS 配置缺失，请检查环境变量');
+        throw new Error('COS 配置缺失');
     }
 
     const urls: string[] = [];
 
     for (const file of files) {
-        const ext = path.extname(file.originalname) || '.jpg';
+        // ====================== 修复在这里 ======================
+        // 判断文件是不是 WebP 格式
+        const isWebp = file.mimetype === 'image/webp';
+        // console.log(`上传文件: ${file.originalname}, MIME 类型: ${file.mimetype}, 是否 WebP: ${isWebp}`);
+        // 如果是 WebP，强制用 .webp 后缀
+        const ext = isWebp ? '.webp' : (path.extname(file.originalname) || '.jpg');
+        const contentType = isWebp ? 'image/webp' : (file.mimetype || 'image/jpeg');
+        // ======================================================
+
         const objectKey = `uploads/hotels/${Date.now()}_${Math.random().toString(36).slice(2)}${ext}`;
-        const contentType = file.mimetype || 'image/jpeg';
         const contentLength = file.buffer.length;
 
         const authorization = bucketSDK.getAuth({
